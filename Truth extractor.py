@@ -67,41 +67,36 @@ def create_interior_mask_from_roi_image(
         roi_image_path: str,
         output_mask_path: str = None,
         line_threshold: int = 150,
-        closing_kernel_size: int = 3,
         min_contour_area: int = 5,
 ) -> np.ndarray:
     """
     Creates a binary mask where regions inside white ROIs are 1.
+    Assumes input ROIs are already closed contours (from visualize_rois_white_on_rgb).
 
     Args:
         roi_image_path: Path to the image with white ROIs (from visualize_rois_white_on_rgb).
         output_mask_path: Where to save the mask (optional).
         line_threshold: Brightness threshold for detecting white lines (0-255).
-        closing_kernel_size: Kernel size to close gaps in lines.
         min_contour_area: Minimum area to consider a valid ROI (removes noise).
 
     Returns:
         Binary mask (np.uint8: 0 or 1).
     """
+
     roi_image = cv2.imread(roi_image_path, cv2.IMREAD_COLOR)
     gray = cv2.cvtColor(roi_image, cv2.COLOR_BGR2GRAY)
 
-    _, binary_lines = cv2.threshold(gray, line_threshold, 255, cv2.THRESH_BINARY)
+    #  thresholding
+    _, binary = cv2.threshold(gray, line_threshold, 255, cv2.THRESH_BINARY)
 
-    # Close gaps
-    kernel = np.ones((closing_kernel_size, closing_kernel_size), np.uint8)
-    closed_lines = cv2.morphologyEx(binary_lines, cv2.MORPH_CLOSE, kernel, iterations=2)
+    # Find contours
+    contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-    # Find contours of closed regions
-    contours, _ = cv2.findContours(closed_lines, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-    # Create a mask
+    # Create mask
     mask = np.zeros_like(gray, dtype=np.uint8)
     for cnt in contours:
         if cv2.contourArea(cnt) >= min_contour_area:
             cv2.drawContours(mask, [cnt], -1, 1, thickness=cv2.FILLED)
-
-    mask = morphology.remove_small_objects(mask.astype(bool), min_size=min_contour_area).astype(np.uint8)
 
     if output_mask_path:
         io.imsave(output_mask_path, mask * 255)

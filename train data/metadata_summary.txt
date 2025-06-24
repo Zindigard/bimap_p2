@@ -3,19 +3,19 @@ CZI Image Metadata Summary
 
 File: WT_NADA_RADA_HADA_NHS_40min_ROI1_SIM.czi
 - Acquisition Date: N/A
-- Microscope Model: N/A
-- Pixel Size: N/A µm (X), N/A µm (Y)
-- Processing Timestamp: 2025-06-10 22:33:41
+- Microscope Model: Andor1, AxioObserver
+- Pixel Size: 0.0322 µm µm (X), 0.0322 µm µm (Y)
+- Processing Timestamp: 2025-06-24 08:07:46
 
 File: WT_NADA_RADA_HADA_NHS_40min_ROI2_SIM.czi
 - Acquisition Date: N/A
-- Microscope Model: N/A
-- Pixel Size: N/A µm (X), N/A µm (Y)
-- Processing Timestamp: 2025-06-10 22:33:41
+- Microscope Model: Andor1, AxioObserver
+- Pixel Size: 0.0322 µm µm (X), 0.0322 µm µm (Y)
+- Processing Timestamp: 2025-06-24 08:07:47
 
 File: WT_NADA_RADA_HADA_NHS_40min_ROI3_SIM.czi
 - Acquisition Date: N/A
-- Microscope Model: N/A
-- Pixel Size: N/A µm (X), N/A µm (Y)
-- Processing Timestamp: 2025-06-10 22:33:42
+- Microscope Model: Andor1, AxioObserver
+- Pixel Size: 0.0322 µm µm (X), 0.0322 µm µm (Y)
+- Processing Timestamp: 2025-06-24 08:07:49
 

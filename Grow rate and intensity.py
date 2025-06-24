@@ -4,6 +4,33 @@ import matplotlib.pyplot as plt
 from skimage.measure import regionprops
 import tifffile
 import argparse
+import re
+
+
+def read_pixel_size_from_metadata(metadata_path, image_filename):
+    """Read pixel size from metadata file for a specific image"""
+    try:
+        with open(metadata_path, 'r') as f:
+            content = f.read()
+
+        # Find the section for our image (handle different extensions)
+        pattern = re.compile(r"File: (.*" + re.escape(image_filename) + r")")
+        match = pattern.search(content)
+        if not match:
+            return None
+
+        # Extract the pixel size line
+        section_start = match.start()
+        pixel_line_match = re.search(r"- Pixel Size: ([0-9.]+) µm", content[section_start:])
+        if not pixel_line_match:
+            return None
+
+        pixel_size_x = float(pixel_line_match.group(1))
+        return pixel_size_x
+
+    except Exception as e:
+        print(f"Error reading metadata: {e}")
+        return None
 
 
 def find_matching_files(sam_folder, brightness_folder):
@@ -29,7 +56,7 @@ def load_data(mask_path, image_path):
     image = tifffile.imread(image_path)
 
     if image.ndim == 3:
-        if image.shape[0] <= 4:
+        if image.shape[0] <= 4:  # If channels first
             image = np.transpose(image, (1, 2, 0))
 
     return masks, image
@@ -136,20 +163,28 @@ def analyze_image_pair(mask_path, image_path, pipeline_mode=False):
     print(f"\nProcessing {mask_path} and {image_path}")
 
     TIME_INTERVAL = 40  # Time between frames in minutes
-    PIXEL_SIZE_NM = 0.03224  # Microscope pixel size in nanometer
+
+    # Read pixel size from metadata
+    metadata_path = Path(r"C:\Users\zindi\PycharmProjects\P2\train data\metadata_summary")
+    image_filename = image_path.stem + '.tif'  # Changed to .tif to match your input files
+    PIXEL_SIZE_UM = read_pixel_size_from_metadata(metadata_path, image_filename)
+
+    if PIXEL_SIZE_UM is None:
+        print("Warning: Could not read pixel size from metadata, using default value 0.0322 µm")
+        PIXEL_SIZE_UM = 0.0322
+
     masks, image = load_data(mask_path, image_path)
     regions = regionprops(masks)
     print(f"Found {len(regions)} cells in the mask")
+    print(f"Using pixel size: {PIXEL_SIZE_UM} µm")
 
     if pipeline_mode:
-        # Predefined cells to analyze in pipeline mode
         predefined_cells = [77, 108, 199]
         selected_cells = [cell for cell in predefined_cells if 1 <= cell <= len(regions)]
         if not selected_cells:
             print(f"No predefined cells found in this image (available: 1-{len(regions)})")
             return
     else:
-        # Get user selection in interactive mode
         selected_cells = get_user_selection(regions)
 
     fig, ax = plt.subplots(figsize=(10, 10))
@@ -159,38 +194,38 @@ def analyze_image_pair(mask_path, image_path, pipeline_mode=False):
         region = regions[cell_num - 1]
         major_px, minor_px = plot_cell_axes(ax, region, cell_num, is_first_cell=(i == 0))
 
-        # Calculate half of major axis length (from centroid to endpoint)
-        half_major_px = major_px
-        half_major_nm = half_major_px * PIXEL_SIZE_NM
-        growth_rate = half_major_nm / TIME_INTERVAL  # nm/min
+        # Calculate growth metrics
+        half_major_px = major_px / 2
+        half_major_um = half_major_px * PIXEL_SIZE_UM
+        growth_rate = half_major_um / TIME_INTERVAL  # µm/min
 
         print(f"\nCell {cell_num}:")
-        print(f"  Major Axis: {major_px:.1f} px ({major_px * PIXEL_SIZE_NM:.1f} mm)")
-        print(f"  Half Major Axis (centroid to endpoint): {half_major_px/2:.1f} px ({half_major_nm/2:.1f} mm)")
-        print(f"  Minor Axis: {minor_px:.1f} px")
-        print(f"  Growth Rate (half axis): {growth_rate:.2f} mm/min")
-
+        print(f"  Major Axis: {major_px:.1f} px ({major_px * PIXEL_SIZE_UM:.1f} µm)")
+        print(f"  Minor Axis: {minor_px:.1f} px ({minor_px * PIXEL_SIZE_UM:.1f} µm)")
+        print(f"  Half Major Axis: {half_major_px:.1f} px ({half_major_um:.1f} µm)")
+        print(f"  Growth Rate: {growth_rate:.3f} µm/min")
+        print(f"  Orientation: {np.rad2deg(region.orientation):.1f}°")
+        print(f"  Eccentricity: {region.eccentricity:.3f}")
 
         plot_cell_intensities(image, masks, cell_num)
 
     if len(selected_cells) > 0:
         ax.legend()
 
-    plt.title(f"Analysis of {mask_path.stem.replace('_masks', '')}")
+    plt.title(f"Analysis of {mask_path.stem.replace('_masks', '')}\n"
+              f"Pixel size: {PIXEL_SIZE_UM} µm | Time interval: {TIME_INTERVAL} min")
     plt.show()
 
 
 def main():
     """Main program entry point"""
-    # Set up argument parser
-    parser = argparse.ArgumentParser(description='Cell analysis script')
+    parser = argparse.ArgumentParser(description='Cell growth analysis with metadata integration')
     parser.add_argument('--pipeline', action='store_true',
-                       help='Run in pipeline mode with predefined cells')
+                        help='Run in pipeline mode with predefined cells')
     args = parser.parse_args()
 
     sam_folder = Path(r"C:\Users\zindi\PycharmProjects\P2\Evaluations\SAM")
     brightness_folder = Path(r"C:\Users\zindi\PycharmProjects\P2\train_brightness")
-
 
     file_pairs = find_matching_files(sam_folder, brightness_folder)
 
@@ -202,23 +237,19 @@ def main():
         for mask_path, image_path in file_pairs:
             analyze_image_pair(mask_path, image_path, pipeline_mode=True)
     else:
-        # Free mode - interactive selection
         print("\nFound the following file pairs:")
         for i, (mask_path, image_path) in enumerate(file_pairs, 1):
             print(f"{i}: {mask_path.name} with {image_path.name}")
-
 
         while True:
             try:
                 selection = input(f"\nEnter which file to process (1-{len(file_pairs)}), or 'all': ")
 
                 if selection.lower() == 'all':
-
                     for mask_path, image_path in file_pairs:
                         analyze_image_pair(mask_path, image_path)
                     break
                 else:
-
                     selected_idx = int(selection) - 1
                     if 0 <= selected_idx < len(file_pairs):
                         mask_path, image_path = file_pairs[selected_idx]

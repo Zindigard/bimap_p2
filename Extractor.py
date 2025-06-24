@@ -10,26 +10,64 @@ import shutil
 
 
 def parse_czi_metadata(metadata_xml: str, filename: str) -> dict:
-    """Extract key metadata from CZI XML."""
+    """Extract detailed metadata from CZI XML."""
     root = ET.fromstring(metadata_xml)
     metadata = {
         'filename': filename,
         'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     }
 
-    # Extract pixel scaling
-    for scaling in root.iter("{http://www.openmicroscopy.org/Schemas/OME/2016-06}Pixels"):
-        metadata["pixel_size_x"] = scaling.get('PhysicalSizeX', 'N/A')
-        metadata["pixel_size_y"] = scaling.get('PhysicalSizeY', 'N/A')
-        metadata["pixel_size_unit"] = scaling.get('PhysicalSizeXUnit', 'µm')
+    # Extract detailed pixel scaling information
+    pixel_sizes = {}
+    scaling = root.find(".//Scaling")
+    if scaling is not None:
+        for distance in scaling.findall(".//Distance"):
+            dim = distance.get('Id')
+            value = distance.find('Value').text
+            pixel_sizes[dim] = f"{float(value) * 1e6:.4f} µm"  # Convert to µm
 
-    # Extract microscope model
-    for instrument in root.iter("{http://www.openmicroscopy.org/Schemas/OME/2016-06}Instrument"):
-        metadata["microscope_model"] = instrument.get("Model", "N/A")
+    metadata.update({
+        'pixel_size_x': pixel_sizes.get('X', 'N/A'),
+        'pixel_size_y': pixel_sizes.get('Y', 'N/A'),
+        'pixel_size_z': pixel_sizes.get('Z', 'N/A'),
+        'pixel_size_unit': 'µm'
+    })
 
-    # Extract acquisition date
-    for image in root.iter("{http://www.openmicroscopy.org/Schemas/OME/2016-06}Image"):
-        metadata["acquisition_date"] = image.get("AcquisitionDate", "N/A")
+    # Extract detailed microscope information
+    microscope_info = {
+        'microscope_model': root.findtext(".//Microscope/System", default="N/A"),
+        'objective_model': root.findtext(".//Objective/Manufacturer/Model", default="N/A"),
+        'objective_na': root.findtext(".//Objective/LensNA", default="N/A"),
+        'objective_magnification': root.findtext(".//Objective/NominalMagnification", default="N/A"),
+        'objective_immersion': root.findtext(".//Objective/Immersion", default="N/A"),
+        'detector_model': root.findtext(".//Detectors/Detector/Manufacturer/Model", default="N/A"),
+        'illumination_type': root.findtext(".//LightSources/LightSource/Type", default="N/A")
+    }
+    metadata.update(microscope_info)
+
+    # Extract acquisition date and time
+    acquisition_date = root.findtext(".//AcquisitionDateAndTime", default="N/A")
+    if acquisition_date != "N/A":
+        try:
+            # Try to format the date in a more readable way
+            dt = datetime.strptime(acquisition_date, "%Y-%m-%dT%H:%M:%S")
+            acquisition_date = dt.strftime('%Y-%m-%d %H:%M:%S')
+        except ValueError:
+            pass
+    metadata['acquisition_date'] = acquisition_date
+
+    # Extract channel information if available
+    channels = []
+    for channel in root.findall(".//Channel"):
+        channel_info = {
+            'name': channel.get('Name', 'N/A'),
+            'excitation_wavelength': channel.findtext(".//ExcitationWavelength", default="N/A"),
+            'emission_wavelength': channel.findtext(".//EmissionWavelength", default="N/A")
+        }
+        channels.append(channel_info)
+
+    if channels:
+        metadata['channels'] = channels
 
     return metadata
 
