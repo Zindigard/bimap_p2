@@ -1,35 +1,70 @@
 import numpy as np
 from pathlib import Path
 import matplotlib.pyplot as plt
-from skimage.measure import regionprops
+from matplotlib.widgets import Cursor
+from skimage.measure import regionprops, find_contours
 import tifffile
 import argparse
 import re
+from matplotlib.patches import Polygon
 
 
-def read_pixel_size_from_metadata(metadata_path, image_filename):
+def read_pixel_size_from_metadata(metadata_folder, image_filename):
     """Read pixel size from metadata file for a specific image"""
+    # Try different possible metadata filenames
+    possible_metadata_files = [
+        metadata_folder / "metadata_summary.txt",
+        metadata_folder / "metadata.txt",
+        metadata_folder / "summary.txt"
+    ]
+    
+    metadata_path = None
+    for file in possible_metadata_files:
+        if file.exists():
+            metadata_path = file
+            break
+    
+    if metadata_path is None:
+        print(f"Warning: No metadata file found in {metadata_folder}")
+        return None
+
     try:
         with open(metadata_path, 'r') as f:
             content = f.read()
 
         # Find the section for our image (handle different extensions)
-        pattern = re.compile(r"File: (.*" + re.escape(image_filename) + r")")
+        base_filename = Path(image_filename).stem  # Remove extension if present
+        pattern = re.compile(r"File: (.*" + re.escape(base_filename) + r")")
         match = pattern.search(content)
         if not match:
+            print(f"Warning: No metadata found for image {base_filename}")
             return None
 
-        # Extract the pixel size line
+        # Extract the pixel size line (looking in the matched section)
         section_start = match.start()
-        pixel_line_match = re.search(r"- Pixel Size: ([0-9.]+) µm", content[section_start:])
+        section_end = content.find("\n\n", section_start)  # Look for next blank line
+        if section_end == -1:
+            section_end = len(content)
+            
+        section_content = content[section_start:section_end]
+        
+        # Look for pixel size in various possible formats
+        pixel_line_match = re.search(r"Pixel Size[:\s]+([0-9.]+)\s*µm", section_content)
         if not pixel_line_match:
+            pixel_line_match = re.search(r"Pixel[:\s]+([0-9.]+)\s*µm", section_content)
+        if not pixel_line_match:
+            pixel_line_match = re.search(r"Size[:\s]+([0-9.]+)\s*µm", section_content)
+            
+        if not pixel_line_match:
+            print(f"Warning: Pixel size not found for image {base_filename}")
             return None
 
         pixel_size_x = float(pixel_line_match.group(1))
+        print(f"Found pixel size: {pixel_size_x} µm for {base_filename}")
         return pixel_size_x
 
     except Exception as e:
-        print(f"Error reading metadata: {e}")
+        print(f"Error reading metadata from {metadata_path}: {e}")
         return None
 
 
@@ -40,12 +75,14 @@ def find_matching_files(sam_folder, brightness_folder):
 
     for mask_file in mask_files:
         original_stem = mask_file.stem.replace('_masks', '')
-        tif_file = brightness_folder / f"{original_stem}.tif"
-
-        if tif_file.exists():
-            file_pairs.append((mask_file, tif_file))
+        # Try different possible image extensions
+        for ext in ['.tif', '.tiff', '.png', '.jpg']:
+            tif_file = brightness_folder / f"{original_stem}{ext}"
+            if tif_file.exists():
+                file_pairs.append((mask_file, tif_file))
+                break
         else:
-            print(f"No matching tif file found for {mask_file}")
+            print(f"No matching image file found for {mask_file}")
 
     return file_pairs
 
@@ -62,8 +99,8 @@ def load_data(mask_path, image_path):
     return masks, image
 
 
-def display_image(ax, image):
-    """Display image with proper scaling based on dtype"""
+def display_image_with_mask_borders(ax, image, masks):
+    """Display image with only mask borders"""
     if image.dtype == np.uint16:
         display_img = image.astype(np.float32) / 65535.0
     elif image.dtype in [np.float32, np.float64]:
@@ -71,25 +108,17 @@ def display_image(ax, image):
     else:
         display_img = image
 
+    # Display the image
     ax.imshow(display_img)
+    
+    # Find and plot contours for each mask
+    for i in range(1, masks.max() + 1):
+        mask = (masks == i).astype(np.uint8)
+        contours = find_contours(mask, 0.5)
+        for contour in contours:
+            ax.plot(contour[:, 1], contour[:, 0], linewidth=1, color='yellow')
+    
     return display_img
-
-
-def get_user_selection(regions):
-    """Prompt user to select cells to analyze"""
-    while True:
-        try:
-            cell_numbers = input(f"Enter cell numbers (1-{len(regions)}, space-separated, or 'all': ")
-
-            if cell_numbers.lower() == 'all':
-                return list(range(1, len(regions) + 1))
-
-            selected = [int(num) for num in cell_numbers.split()]
-            if all(1 <= num <= len(regions) for num in selected):
-                return selected
-            print(f"Numbers must be between 1 and {len(regions)}")
-        except ValueError:
-            print("Please enter numbers separated by spaces")
 
 
 def calculate_axis_endpoints(centroid, length, angle, is_major=True):
@@ -109,8 +138,8 @@ def calculate_axis_endpoints(centroid, length, angle, is_major=True):
     return (x1, y1), (x2, y2)
 
 
-def plot_cell_axes(ax, region, cell_num, is_first_cell=False):
-    """Plot major and minor axes for a single cell with centroid point"""
+def plot_cell_info(ax, region, pixel_size_um, time_interval):
+    """Plot cell information including axes and growth rate"""
     centroid = region.centroid
     minor_len = region.minor_axis_length
     major_len = region.major_axis_length
@@ -120,112 +149,188 @@ def plot_cell_axes(ax, region, cell_num, is_first_cell=False):
     major_p1, major_p2 = calculate_axis_endpoints(centroid, major_len, orientation, True)
     minor_p1, minor_p2 = calculate_axis_endpoints(centroid, minor_len, orientation, False)
 
-    ax.plot([major_p1[0], major_p2[0]], [major_p1[1], major_p2[1]],
-            color='red', linewidth=1.5,
-            label='Major Axis' if is_first_cell else '')
-    ax.plot([minor_p1[0], minor_p2[0]], [minor_p1[1], minor_p2[1]],
-            color='blue', linewidth=1.5,
-            label='Minor Axis' if is_first_cell else '')
+    # Plot axes and centroid and return the line objects
+    major_line = ax.plot([major_p1[0], major_p2[0]], [major_p1[1], major_p2[1]],
+                        color='red', linewidth=0.8, label='Major Axis')[0]
+    minor_line = ax.plot([minor_p1[0], minor_p2[0]], [minor_p1[1], minor_p2[1]],
+                        color='blue', linewidth=0.8, label='Minor Axis')[0]
+    centroid_point = ax.plot(centroid[1], centroid[0], 'yo', markersize=2)[0]
 
-    y0, x0 = centroid
-    ax.plot(x0, y0, 'yo', markersize=3)
+    # Calculate growth metrics
+    half_major_px = major_len / 2
+    half_major_um = half_major_px * pixel_size_um
+    growth_rate = half_major_um / time_interval  # µm/min
 
-    return major_len, minor_len
+    info_text = (
+        f"Major Axis: {major_len * pixel_size_um:.1f}µm\n"
+        f"Growth Rate: {growth_rate:.3f}µm/min"
+    )
+
+    return info_text, growth_rate, major_line, minor_line, centroid_point
 
 
-def plot_cell_intensities(image, mask, cell_num):
-    """Plot intensity distributions for each channel of a single cell"""
+def create_intensity_plots(image, mask, cell_num, axs):
+    """Create intensity distribution plots for a cell"""
     if image.ndim != 3 or image.shape[2] < 3:
         raise ValueError("Image must be RGB (3 channels)")
 
     cell_mask = mask == cell_num
     channels = ['Red', 'Green', 'Blue']
 
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-    fig.suptitle(f'Cell {cell_num} Intensity Distributions', fontsize=14)
-
-    for i, channel in enumerate(channels):
+    for i, (channel, ax) in enumerate(zip(channels, axs)):
         channel_data = image[:, :, i]
-        masked_data = channel_data[cell_mask] / 4.5
+        masked_data = channel_data[cell_mask]
+        
+        # Normalize based on dtype
+        if channel_data.dtype == np.uint16:
+            masked_data = masked_data / 65535.0
+        elif channel_data.dtype == np.uint8:
+            masked_data = masked_data / 255.0
+        
+        ax.cla()
+        ax.hist(masked_data.flatten(), bins=50, color=channel.lower(), alpha=0.7)
+        ax.set_title(f'{channel} Channel Intensity')
+        ax.set_ylabel('Pixel Count')
+        ax.grid(True)
+        ax.set_xlim(0, 1)  # Consistent scale for comparison
 
-        axes[i].hist(masked_data.flatten(), bins=50, color=channel.lower(), alpha=0.7)
-        axes[i].set_title(f'{channel} Channel')
-        axes[i].set_xlabel('Intensity Value')
-        axes[i].set_ylabel('Pixel Count')
-        axes[i].grid(True)
 
-    plt.tight_layout()
-    plt.show()
-
-
-def analyze_image_pair(mask_path, image_path, pipeline_mode=False):
-    """Main analysis function for one image/mask pair"""
-    print(f"\nProcessing {mask_path} and {image_path}")
-
-    TIME_INTERVAL = 40  # Time between frames in minutes
-
-    # Read pixel size from metadata
-    metadata_path = Path(r"C:\Users\zindi\PycharmProjects\P2\train data\metadata_summary")
-    image_filename = image_path.stem + '.tif'  # Changed to .tif to match your input files
-    PIXEL_SIZE_UM = read_pixel_size_from_metadata(metadata_path, image_filename)
-
-    if PIXEL_SIZE_UM is None:
-        print("Warning: Could not read pixel size from metadata, using default value 0.0322 µm")
-        PIXEL_SIZE_UM = 0.0322
-
+def analyze_image_pair_interactive(mask_path, image_path, pixel_size_um, time_interval=40):
+    """Interactive analysis function with mouse hover functionality"""
     masks, image = load_data(mask_path, image_path)
     regions = regionprops(masks)
-    print(f"Found {len(regions)} cells in the mask")
-    print(f"Using pixel size: {PIXEL_SIZE_UM} µm")
 
-    if pipeline_mode:
-        predefined_cells = [77, 108, 199]
-        selected_cells = [cell for cell in predefined_cells if 1 <= cell <= len(regions)]
-        if not selected_cells:
-            print(f"No predefined cells found in this image (available: 1-{len(regions)})")
+    # Create main figure with subplots
+    fig = plt.figure(figsize=(15, 10))
+    gs = fig.add_gridspec(3, 3, width_ratios=[2, 0.05, 1])  # 3 rows, 3 columns
+    
+    # Main image takes left 2 columns and all rows
+    ax_img = fig.add_subplot(gs[:, 0])
+
+    # Create a column for the info box between image and plots
+    info_ax = fig.add_subplot(gs[:, 1])
+    info_ax.axis('off')  # Hide the axes
+    
+    # Create separate axes for each intensity plot
+    ax_red = fig.add_subplot(gs[0, 2])    # Top right
+    ax_green = fig.add_subplot(gs[1, 2])  # Middle right
+    ax_blue = fig.add_subplot(gs[2, 2])   # Bottom right
+    
+    intensity_axs = [ax_red, ax_green, ax_blue]
+
+    # Display the image with mask borders
+    display_img = display_image_with_mask_borders(ax_img, image, masks)
+
+    # Create a dictionary to map coordinates to cell numbers
+    coord_to_cell = {}
+    for i, region in enumerate(regions, 1):
+        for coord in region.coords:
+            coord_to_cell[(coord[0], coord[1])] = i
+
+    # Create text box for cell info (position adjusted)
+    info_box = fig.text(0.72, 0.95, "", 
+                       bbox=dict(facecolor='white', alpha=0.8, edgecolor='black'),
+                       fontsize=9,
+                       linespacing=1.5)
+
+    # Create a cursor
+    cursor = Cursor(ax_img, useblit=True, color='red', linewidth=1)
+
+    # Initialize variables to store plot elements
+    last_contour = None
+    major_axis_line = None
+    minor_axis_line = None
+    centroid_point = None
+
+    def on_mouse_move(event):
+        nonlocal last_contour, major_axis_line, minor_axis_line, centroid_point
+
+        if event.inaxes != ax_img:
             return
-    else:
-        selected_cells = get_user_selection(regions)
 
-    fig, ax = plt.subplots(figsize=(10, 10))
-    display_img = display_image(ax, image)
+        try:
+            x, y = int(event.xdata), int(event.ydata)
+        except (TypeError, ValueError):
+            # Handle cases where coordinates are None or invalid
+            return
 
-    for i, cell_num in enumerate(selected_cells):
-        region = regions[cell_num - 1]
-        major_px, minor_px = plot_cell_axes(ax, region, cell_num, is_first_cell=(i == 0))
+        # Remove previous elements if they exist
+        for element in [last_contour, major_axis_line, minor_axis_line, centroid_point]:
+            if element is not None and element in ax_img.lines or element in ax_img.collections:
+                try:
+                    element.remove()
+                except ValueError:
+                    pass  # Element was already removed
+            element = None
 
-        # Calculate growth metrics
-        half_major_px = major_px / 2
-        half_major_um = half_major_px * PIXEL_SIZE_UM
-        growth_rate = half_major_um / TIME_INTERVAL  # µm/min
+        # Find which cell the cursor is on
+        cell_num = coord_to_cell.get((y, x), None)
 
-        print(f"\nCell {cell_num}:")
-        print(f"  Major Axis: {major_px:.1f} px ({major_px * PIXEL_SIZE_UM:.1f} µm)")
-        print(f"  Minor Axis: {minor_px:.1f} px ({minor_px * PIXEL_SIZE_UM:.1f} µm)")
-        print(f"  Half Major Axis: {half_major_px:.1f} px ({half_major_um:.1f} µm)")
-        print(f"  Growth Rate: {growth_rate:.3f} µm/min")
-        print(f"  Orientation: {np.rad2deg(region.orientation):.1f}°")
-        print(f"  Eccentricity: {region.eccentricity:.3f}")
+        if cell_num is not None and 1 <= cell_num <= len(regions):
+            try:
+                region = regions[cell_num - 1]
 
-        plot_cell_intensities(image, masks, cell_num)
+                # Highlight the current cell with a thicker border
+                mask = (masks == cell_num).astype(np.uint8)
+                contours = find_contours(mask, 0.5)
+                for contour in contours:
+                    last_contour = ax_img.plot(contour[:, 1], contour[:, 0], 
+                                             linewidth=2, color='cyan')[0]
 
-    if len(selected_cells) > 0:
-        ax.legend()
+                # Update cell info
+                info_text, _, major_axis_line, minor_axis_line, centroid_point = plot_cell_info(
+                    ax_img, region, pixel_size_um, time_interval
+                )
+                info_box.set_text(info_text)
 
-    plt.title(f"Analysis of {mask_path.stem.replace('_masks', '')}\n"
-              f"Pixel size: {PIXEL_SIZE_UM} µm | Time interval: {TIME_INTERVAL} min")
+                # Update intensity plots
+                try:
+                    create_intensity_plots(image, masks, cell_num, intensity_axs)
+                except ValueError as e:
+                    print(f"Error creating intensity plots: {e}")
+                    for ax in intensity_axs:
+                        ax.cla()
+                        ax.set_title('')
+                        ax.set_ylabel('')
+                        ax.grid(False)
+
+            except IndexError:
+                # Handle case where cell_num is out of bounds
+                pass
+        else:
+            # Clear the info box when not hovering over a cell
+            info_box.set_text("")
+            
+            # Clear intensity plots
+            for ax in intensity_axs:
+                ax.cla()
+                ax.set_title('')
+                ax.set_ylabel('')
+                ax.grid(False)
+
+        try:
+            fig.canvas.draw_idle()
+        except:
+            pass
+
+    fig.canvas.mpl_connect('motion_notify_event', on_mouse_move)
+
+    plt.suptitle(f"Interactive Analysis - {image_path.stem}\n"
+                f"Pixel size: {pixel_size_um} µm | Time interval: {time_interval} min")
+    plt.tight_layout()
     plt.show()
 
 
 def main():
     """Main program entry point"""
-    parser = argparse.ArgumentParser(description='Cell growth analysis with metadata integration')
+    parser = argparse.ArgumentParser(description='Interactive cell growth analysis')
     parser.add_argument('--pipeline', action='store_true',
-                        help='Run in pipeline mode with predefined cells')
+                        help='Run in pipeline mode (processes only first image)')
     args = parser.parse_args()
 
     sam_folder = Path(r"C:\Users\zindi\PycharmProjects\P2\Evaluations\SAM")
     brightness_folder = Path(r"C:\Users\zindi\PycharmProjects\P2\train_brightness")
+    metadata_folder = Path(r"C:\Users\zindi\PycharmProjects\P2\test_data")
 
     file_pairs = find_matching_files(sam_folder, brightness_folder)
 
@@ -234,8 +339,11 @@ def main():
         return
 
     if args.pipeline:
-        for mask_path, image_path in file_pairs:
-            analyze_image_pair(mask_path, image_path, pipeline_mode=True)
+        # Process only the first image in pipeline mode
+        mask_path, image_path = file_pairs[0]
+        image_filename = image_path.name
+        pixel_size_um = read_pixel_size_from_metadata(metadata_folder, image_filename) or 0.0322
+        analyze_image_pair_interactive(mask_path, image_path, pixel_size_um)
     else:
         print("\nFound the following file pairs:")
         for i, (mask_path, image_path) in enumerate(file_pairs, 1):
@@ -243,21 +351,17 @@ def main():
 
         while True:
             try:
-                selection = input(f"\nEnter which file to process (1-{len(file_pairs)}), or 'all': ")
-
-                if selection.lower() == 'all':
-                    for mask_path, image_path in file_pairs:
-                        analyze_image_pair(mask_path, image_path)
+                selection = input(f"\nEnter which file to process (1-{len(file_pairs)}): ")
+                selected_idx = int(selection) - 1
+                if 0 <= selected_idx < len(file_pairs):
+                    mask_path, image_path = file_pairs[selected_idx]
+                    image_filename = image_path.name
+                    pixel_size_um = read_pixel_size_from_metadata(metadata_folder, image_filename) or 0.0322
+                    analyze_image_pair_interactive(mask_path, image_path, pixel_size_um)
                     break
-                else:
-                    selected_idx = int(selection) - 1
-                    if 0 <= selected_idx < len(file_pairs):
-                        mask_path, image_path = file_pairs[selected_idx]
-                        analyze_image_pair(mask_path, image_path)
-                        break
-                    print(f"Please enter a number between 1 and {len(file_pairs)}")
+                print(f"Please enter a number between 1 and {len(file_pairs)}")
             except ValueError:
-                print("Please enter a valid number or 'all'")
+                print("Please enter a valid number")
 
 
 if __name__ == "__main__":

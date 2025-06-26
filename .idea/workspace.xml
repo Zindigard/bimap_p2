@@ -4,21 +4,9 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="13bde384-ce8b-4e5f-afa0-fdecfbfeae95" name="Changes" comment="Pipelinev2">
+    <list default="true" id="13bde384-ce8b-4e5f-afa0-fdecfbfeae95" name="Changes" comment="metada and masks upgrade">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Evaluations/Ground/WT_NADA_RADA_HADA_NHS_40min_ROI1_SIM_mask.tif" beforeDir="false" afterPath="$PROJECT_DIR$/Evaluations/Ground/WT_NADA_RADA_HADA_NHS_40min_ROI1_SIM_mask.tif" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Extractor.py" beforeDir="false" afterPath="$PROJECT_DIR$/Extractor.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Grow rate and intensity.py" beforeDir="false" afterPath="$PROJECT_DIR$/Grow rate and intensity.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Truth extractor.py" beforeDir="false" afterPath="$PROJECT_DIR$/Truth extractor.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/file.py" beforeDir="false" afterPath="$PROJECT_DIR$/file.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/train data/WT_NADA_RADA_HADA_NHS_40min_ROI1_SIM.tif" beforeDir="false" afterPath="$PROJECT_DIR$/train data/WT_NADA_RADA_HADA_NHS_40min_ROI1_SIM.tif" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/train data/WT_NADA_RADA_HADA_NHS_40min_ROI2_SIM.tif" beforeDir="false" afterPath="$PROJECT_DIR$/train data/WT_NADA_RADA_HADA_NHS_40min_ROI2_SIM.tif" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/train data/metadata_summary.txt" beforeDir="false" afterPath="$PROJECT_DIR$/train data/metadata_summary.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/train_brightness/WT_NADA_RADA_HADA_NHS_40min_ROI1_SIM.tif" beforeDir="false" afterPath="$PROJECT_DIR$/train_brightness/WT_NADA_RADA_HADA_NHS_40min_ROI1_SIM.tif" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/train_brightness/WT_NADA_RADA_HADA_NHS_40min_ROI2_SIM.tif" beforeDir="false" afterPath="$PROJECT_DIR$/train_brightness/WT_NADA_RADA_HADA_NHS_40min_ROI2_SIM.tif" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/train_brightness/WT_NADA_RADA_HADA_NHS_40min_ROI3_SIM.tif" beforeDir="false" afterPath="$PROJECT_DIR$/train_brightness/WT_NADA_RADA_HADA_NHS_40min_ROI3_SIM.tif" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/unpacked images/True/WT_NADA_RADA_HADA_NHS_40min_ROI1_SIM/WT_NADA_RADA_HADA_NHS_40min_ROI1_SIM.tif" beforeDir="false" afterPath="$PROJECT_DIR$/unpacked images/True/WT_NADA_RADA_HADA_NHS_40min_ROI1_SIM/WT_NADA_RADA_HADA_NHS_40min_ROI1_SIM.tif" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/unpacked images/True/WT_NADA_RADA_HADA_NHS_40min_ROI3_SIM/WT_NADA_RADA_HADA_NHS_40min_ROI3_SIM.tif" beforeDir="false" afterPath="$PROJECT_DIR$/unpacked images/True/WT_NADA_RADA_HADA_NHS_40min_ROI3_SIM/WT_NADA_RADA_HADA_NHS_40min_ROI3_SIM.tif" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -95,6 +83,9 @@
       <workItem from="1750334723214" duration="83000" />
       <workItem from="1750427498720" duration="225000" />
       <workItem from="1750742206256" duration="3039000" />
+      <workItem from="1750755565664" duration="318000" />
+      <workItem from="1750943992371" duration="563000" />
+      <workItem from="1750946303381" duration="354000" />
     </task>
     <task id="LOCAL-00001" summary="Updatedv2">
       <option name="closed" value="true" />
@@ -152,7 +143,15 @@
       <option name="project" value="LOCAL" />
       <updated>1749644057066</updated>
     </task>
-    <option name="localTasksCounter" value="8" />
+    <task id="LOCAL-00008" summary="metada and masks upgrade">
+      <option name="closed" value="true" />
+      <created>1750755705491</created>
+      <option name="number" value="00008" />
+      <option name="presentableId" value="LOCAL-00008" />
+      <option name="project" value="LOCAL" />
+      <updated>1750755705491</updated>
+    </task>
+    <option name="localTasksCounter" value="9" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -163,7 +162,8 @@
     <MESSAGE value="Updatedv seg" />
     <MESSAGE value="Pipeline" />
     <MESSAGE value="Pipelinev2" />
-    <option name="LAST_COMMIT_MESSAGE" value="Pipelinev2" />
+    <MESSAGE value="metada and masks upgrade" />
+    <option name="LAST_COMMIT_MESSAGE" value="metada and masks upgrade" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
@@ -178,7 +178,7 @@
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/P2$run_all.coverage" NAME="run all Coverage Results" MODIFIED="1749587619384" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/P2$Denoising.coverage" NAME="Denoising Coverage Results" MODIFIED="1749642101418" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
-    <SUITE FILE_PATH="coverage/P2$file.coverage" NAME="file Coverage Results" MODIFIED="1750744397845" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/P2$file.coverage" NAME="file Coverage Results" MODIFIED="1750946575151" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/P2$Grow_rate_and_intensity.coverage" NAME="Grow rate and intensity Coverage Results" MODIFIED="1749636557129" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/P2$Segmentaion.coverage" NAME="Segmentaion Coverage Results" MODIFIED="1749584766473" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/P2$Truth_extractor.coverage" NAME="Truth extractor Coverage Results" MODIFIED="1750743253915" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />

@@ -363,7 +363,7 @@ def batch_process(input_dir: str, output_dir: str, sigma: float = 0.1, overwrite
 
 if __name__ == "__main__":
     # Configuration
-    input_dir = r"C:\Users\zindi\PycharmProjects\P2\train data"
+    input_dir = r"C:\Users\zindi\PycharmProjects\P2\test_data"
     output_dir = r"C:\Users\zindi\PycharmProjects\P2\denoised"
     sigma = 0.5  # Initial noise level estimate
     overwrite = False

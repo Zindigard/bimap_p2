@@ -170,11 +170,20 @@ def save_metadata_to_file(metadata_list: list, output_folder: str):
 
         for metadata in metadata_list:
             f.write(f"File: {metadata['filename']}\n")
-            f.write(f"- Acquisition Date: {metadata.get('acquisition_date', 'N/A')}\n")
             f.write(f"- Microscope Model: {metadata.get('microscope_model', 'N/A')}\n")
-            f.write(f"- Pixel Size: {metadata.get('pixel_size_x', 'N/A')} {metadata.get('pixel_size_unit', 'µm')} "
-                    f"(X), {metadata.get('pixel_size_y', 'N/A')} {metadata.get('pixel_size_unit', 'µm')} (Y)\n")
+            f.write(f"- Pixel Size: {metadata.get('pixel_size_x', 'N/A')} (X), "
+                    f"{metadata.get('pixel_size_y', 'N/A')} (Y)\n")
             f.write(f"- Processing Timestamp: {metadata['timestamp']}\n")
+            
+            # Add channel information if available
+            if 'channels' in metadata:
+                f.write("- Channels:\n")
+                for i, channel in enumerate(metadata['channels']):
+                    f.write(f"  Channel {i}:\n")
+                    f.write(f"    Name: {channel.get('name', 'N/A')}\n")
+                    f.write(f"    Excitation: {channel.get('excitation_wavelength', 'N/A')}\n")
+                    f.write(f"    Emission: {channel.get('emission_wavelength', 'N/A')}\n")
+            
             f.write("\n")
 
 
@@ -412,7 +421,7 @@ def process_all_tiff_brightness(input_folder: str, output_folder: str, brightnes
 if __name__ == "__main__":
     # Define paths
     raw_folder = r"C:\Users\zindi\PycharmProjects\P2\unpacked images\Raw"
-    output_folder = r"C:\Users\zindi\PycharmProjects\P2\train data"
+    output_folder = r"C:\Users\zindi\PycharmProjects\P2\test_data"
     brightness_folder = r"C:\Users\zindi\PycharmProjects\P2\train_brightness"
     true_root_folder = r"C:\Users\zindi\PycharmProjects\P2\unpacked images\True"
 

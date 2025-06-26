@@ -34,7 +34,7 @@ def post_process_masks(masks):
 
 
 def setup_paths():
-    image_dir = Path(r"C:\Users\zindi\PycharmProjects\P2\train data")
+    image_dir = Path(r"C:\Users\zindi\PycharmProjects\P2\test_data")
     output_dir = Path(r"C:\Users\zindi\PycharmProjects\P2\Evaluations\SAM")
     brightness_dir = Path(r"C:\Users\zindi\PycharmProjects\P2\train_brightness")
     output_dir.mkdir(parents=True, exist_ok=True)
