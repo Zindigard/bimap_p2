@@ -2,128 +2,227 @@ CZI Image Metadata Summary
 ========================================
 
 File: WT_NADA_RADA_HADA_NHS_40min_ROI1_SIM.czi
-- Microscope Model: Andor1, AxioObserver
-- Pixel Size: 0.0322 µm (X), 0.0322 µm (Y)
-- Processing Timestamp: 2025-06-26 19:12:24
-- Channels:
-  Channel 0:
-    Name: TV1-T1-SR
-    Excitation: 405.00000000000006
-    Emission: 405.00000000000006
-  Channel 1:
-    Name: TV1-T2-SR
-    Excitation: 488.00000000000006
-    Emission: 488.00000000000006
-  Channel 2:
-    Name: TV1-T3-SR
-    Excitation: 561
-    Emission: 561
-  Channel 3:
-    Name: N/A
-    Excitation: 4.0500000000000004e-007
-    Emission: N/A
-  Channel 4:
-    Name: N/A
-    Excitation: 4.8800000000000003e-007
-    Emission: N/A
-  Channel 5:
-    Name: N/A
-    Excitation: 5.6100000000000001e-007
-    Emission: N/A
-  Channel 6:
-    Name: TV1-T1-SR
-    Excitation: N/A
-    Emission: N/A
-  Channel 7:
-    Name: TV1-T2-SR
-    Excitation: N/A
-    Emission: N/A
-  Channel 8:
-    Name: TV1-T3-SR
-    Excitation: N/A
-    Emission: N/A
+Acquisition Date: N/A
+Processing Timestamp: 2025-06-29 23:28:30
+
+Microscope Information:
+- Model: Andor1, AxioObserver
+- Objective: Plan-Apochromat 63x/1.4 Oil DIC M27
+  Magnification: 63x
+  NA: 1.4000000000000001
+  Immersion: Oil
+- Detector: 
+- Illumination Type: N/A
+
+Pixel Information:
+- X: 0.0322 µm
+- Y: 0.0322 µm
+- Z: 2.0000 µm
+
+Channel Details:
+Channel 1:
+- Name: TV1-T1-SR
+- Excitation Wavelength: 405.00000000000006 nm
+- Emission Wavelength: 405.00000000000006 nm
+- Exposure Time: 89846153000.00 ms
+
+Channel 2:
+- Name: TV1-T2-SR
+- Excitation Wavelength: 488.00000000000006 nm
+- Emission Wavelength: 488.00000000000006 nm
+- Exposure Time: 113230769000.00 ms
+
+Channel 3:
+- Name: TV1-T3-SR
+- Excitation Wavelength: 561 nm
+- Emission Wavelength: 561 nm
+- Exposure Time: 89846153000.00 ms
+
+Channel 4:
+- Name: N/A
+- Excitation Wavelength: 4.0500000000000004e-007 nm
+- Emission Wavelength: N/A nm
+- Exposure Time: N/A
+
+Channel 5:
+- Name: N/A
+- Excitation Wavelength: 4.8800000000000003e-007 nm
+- Emission Wavelength: N/A nm
+- Exposure Time: N/A
+
+Channel 6:
+- Name: N/A
+- Excitation Wavelength: 5.6100000000000001e-007 nm
+- Emission Wavelength: N/A nm
+- Exposure Time: N/A
+
+Channel 7:
+- Name: TV1-T1-SR
+- Excitation Wavelength: N/A nm
+- Emission Wavelength: N/A nm
+- Exposure Time: N/A
+
+Channel 8:
+- Name: TV1-T2-SR
+- Excitation Wavelength: N/A nm
+- Emission Wavelength: N/A nm
+- Exposure Time: N/A
+
+Channel 9:
+- Name: TV1-T3-SR
+- Excitation Wavelength: N/A nm
+- Emission Wavelength: N/A nm
+- Exposure Time: N/A
+
+========================================
 
 File: WT_NADA_RADA_HADA_NHS_40min_ROI2_SIM.czi
-- Microscope Model: Andor1, AxioObserver
-- Pixel Size: 0.0322 µm (X), 0.0322 µm (Y)
-- Processing Timestamp: 2025-06-26 19:12:24
-- Channels:
-  Channel 0:
-    Name: TV1-T1-SR
-    Excitation: 405.00000000000006
-    Emission: 405.00000000000006
-  Channel 1:
-    Name: TV1-T2-SR
-    Excitation: 488.00000000000006
-    Emission: 488.00000000000006
-  Channel 2:
-    Name: TV1-T3-SR
-    Excitation: 561
-    Emission: 561
-  Channel 3:
-    Name: N/A
-    Excitation: 4.0500000000000004e-007
-    Emission: N/A
-  Channel 4:
-    Name: N/A
-    Excitation: 4.8800000000000003e-007
-    Emission: N/A
-  Channel 5:
-    Name: N/A
-    Excitation: 5.6100000000000001e-007
-    Emission: N/A
-  Channel 6:
-    Name: TV1-T1-SR
-    Excitation: N/A
-    Emission: N/A
-  Channel 7:
-    Name: TV1-T2-SR
-    Excitation: N/A
-    Emission: N/A
-  Channel 8:
-    Name: TV1-T3-SR
-    Excitation: N/A
-    Emission: N/A
+Acquisition Date: N/A
+Processing Timestamp: 2025-06-29 23:28:30
+
+Microscope Information:
+- Model: Andor1, AxioObserver
+- Objective: Plan-Apochromat 63x/1.4 Oil DIC M27
+  Magnification: 63x
+  NA: 1.4000000000000001
+  Immersion: Oil
+- Detector: 
+- Illumination Type: N/A
+
+Pixel Information:
+- X: 0.0322 µm
+- Y: 0.0322 µm
+- Z: 2.0000 µm
+
+Channel Details:
+Channel 1:
+- Name: TV1-T1-SR
+- Excitation Wavelength: 405.00000000000006 nm
+- Emission Wavelength: 405.00000000000006 nm
+- Exposure Time: 89846153000.00 ms
+
+Channel 2:
+- Name: TV1-T2-SR
+- Excitation Wavelength: 488.00000000000006 nm
+- Emission Wavelength: 488.00000000000006 nm
+- Exposure Time: 113230769000.00 ms
+
+Channel 3:
+- Name: TV1-T3-SR
+- Excitation Wavelength: 561 nm
+- Emission Wavelength: 561 nm
+- Exposure Time: 89846153000.00 ms
+
+Channel 4:
+- Name: N/A
+- Excitation Wavelength: 4.0500000000000004e-007 nm
+- Emission Wavelength: N/A nm
+- Exposure Time: N/A
+
+Channel 5:
+- Name: N/A
+- Excitation Wavelength: 4.8800000000000003e-007 nm
+- Emission Wavelength: N/A nm
+- Exposure Time: N/A
+
+Channel 6:
+- Name: N/A
+- Excitation Wavelength: 5.6100000000000001e-007 nm
+- Emission Wavelength: N/A nm
+- Exposure Time: N/A
+
+Channel 7:
+- Name: TV1-T1-SR
+- Excitation Wavelength: N/A nm
+- Emission Wavelength: N/A nm
+- Exposure Time: N/A
+
+Channel 8:
+- Name: TV1-T2-SR
+- Excitation Wavelength: N/A nm
+- Emission Wavelength: N/A nm
+- Exposure Time: N/A
+
+Channel 9:
+- Name: TV1-T3-SR
+- Excitation Wavelength: N/A nm
+- Emission Wavelength: N/A nm
+- Exposure Time: N/A
+
+========================================
 
 File: WT_NADA_RADA_HADA_NHS_40min_ROI3_SIM.czi
-- Microscope Model: Andor1, AxioObserver
-- Pixel Size: 0.0322 µm (X), 0.0322 µm (Y)
-- Processing Timestamp: 2025-06-26 19:12:24
-- Channels:
-  Channel 0:
-    Name: TV1-T1-SR
-    Excitation: 405.00000000000006
-    Emission: 405.00000000000006
-  Channel 1:
-    Name: TV1-T2-SR
-    Excitation: 488.00000000000006
-    Emission: 488.00000000000006
-  Channel 2:
-    Name: TV1-T3-SR
-    Excitation: 561
-    Emission: 561
-  Channel 3:
-    Name: N/A
-    Excitation: 4.0500000000000004e-007
-    Emission: N/A
-  Channel 4:
-    Name: N/A
-    Excitation: 4.8800000000000003e-007
-    Emission: N/A
-  Channel 5:
-    Name: N/A
-    Excitation: 5.6100000000000001e-007
-    Emission: N/A
-  Channel 6:
-    Name: TV1-T1-SR
-    Excitation: N/A
-    Emission: N/A
-  Channel 7:
-    Name: TV1-T2-SR
-    Excitation: N/A
-    Emission: N/A
-  Channel 8:
-    Name: TV1-T3-SR
-    Excitation: N/A
-    Emission: N/A
+Acquisition Date: N/A
+Processing Timestamp: 2025-06-29 23:28:30
+
+Microscope Information:
+- Model: Andor1, AxioObserver
+- Objective: Plan-Apochromat 63x/1.4 Oil DIC M27
+  Magnification: 63x
+  NA: 1.4000000000000001
+  Immersion: Oil
+- Detector: 
+- Illumination Type: N/A
+
+Pixel Information:
+- X: 0.0322 µm
+- Y: 0.0322 µm
+- Z: 2.0000 µm
+
+Channel Details:
+Channel 1:
+- Name: TV1-T1-SR
+- Excitation Wavelength: 405.00000000000006 nm
+- Emission Wavelength: 405.00000000000006 nm
+- Exposure Time: 89846153000.00 ms
+
+Channel 2:
+- Name: TV1-T2-SR
+- Excitation Wavelength: 488.00000000000006 nm
+- Emission Wavelength: 488.00000000000006 nm
+- Exposure Time: 113230769000.00 ms
+
+Channel 3:
+- Name: TV1-T3-SR
+- Excitation Wavelength: 561 nm
+- Emission Wavelength: 561 nm
+- Exposure Time: 89846153000.00 ms
+
+Channel 4:
+- Name: N/A
+- Excitation Wavelength: 4.0500000000000004e-007 nm
+- Emission Wavelength: N/A nm
+- Exposure Time: N/A
+
+Channel 5:
+- Name: N/A
+- Excitation Wavelength: 4.8800000000000003e-007 nm
+- Emission Wavelength: N/A nm
+- Exposure Time: N/A
+
+Channel 6:
+- Name: N/A
+- Excitation Wavelength: 5.6100000000000001e-007 nm
+- Emission Wavelength: N/A nm
+- Exposure Time: N/A
+
+Channel 7:
+- Name: TV1-T1-SR
+- Excitation Wavelength: N/A nm
+- Emission Wavelength: N/A nm
+- Exposure Time: N/A
+
+Channel 8:
+- Name: TV1-T2-SR
+- Excitation Wavelength: N/A nm
+- Emission Wavelength: N/A nm
+- Exposure Time: N/A
+
+Channel 9:
+- Name: TV1-T3-SR
+- Excitation Wavelength: N/A nm
+- Emission Wavelength: N/A nm
+- Exposure Time: N/A
+
+========================================
 

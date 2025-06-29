@@ -1,0 +1,104 @@
+import numpy as np
+import os
+from cellpose import models, core, io, train
+from pathlib import Path
+import matplotlib.pyplot as plt
+import torch
+from natsort import natsorted
+from cellpose import metrics
+
+# Setup
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
+io.logger_setup()
+
+def train_model():
+    # Initialize model
+    model = models.CellposeModel(gpu=False, pretrained_model='cpsam')
+    
+    # Training directory
+    train_dir = r"C:\Users\zindi\PycharmProjects\P2\train_data"
+    if not Path(train_dir).exists():
+        raise FileNotFoundError(f"Directory {train_dir} does not exist")
+    
+    test_dir = r"C:\Users\zindi\PycharmProjects\P2\validation"
+    if not Path(test_dir).exists():
+        raise FileNotFoundError(f"Directory {test_dir} does not exist")
+    
+    # Load data
+    output = io.load_train_test_data(train_dir, test_dir, mask_filter="_mask")
+    train_data, train_labels, _, test_data, test_labels, _ = output
+    
+    # Prepare images for Cellpose
+    processed_train_data = []
+    for img in train_data:
+        if img.ndim == 3 and img.shape[-1] == 3:
+            img = np.transpose(img, (2, 0, 1))
+            img = img.astype(np.float32) / 255.0
+        elif img.ndim == 2:
+            img = img[np.newaxis, ...].astype(np.float32) / 255.0
+        processed_train_data.append(img)
+    
+    # Model name for saving
+    model_name = "cellpose_finetuned"
+    save_path = Path(train_dir) / "training_results"
+    save_path.mkdir(exist_ok=True)
+    
+    # Training parameters
+    n_epochs = 100
+    learning_rate = 1e-5
+    weight_decay = 0.1
+    batch_size = 1
+
+    
+    # Train the model
+    new_model_path, train_losses, test_losses = train.train_seg(
+        model.net,
+        train_data=processed_train_data,
+        train_labels=train_labels,
+        batch_size=batch_size,
+        n_epochs=n_epochs,
+        learning_rate=learning_rate,
+        weight_decay=weight_decay,
+        nimg_per_epoch=max(8, len(processed_train_data)),
+        model_name=model_name,
+        save_every=5,
+        save_each=False
+    )
+
+    model = models.CellposeModel(gpu=True,
+                             pretrained_model=new_model_path)
+
+    # run model on test images
+    masks = model.eval(test_data, batch_size=4)[0]
+
+    # check performance using ground truth labels
+    ap = metrics.average_precision(test_labels, masks)[0]
+    print('')
+    print(f'>>> average precision at iou threshold 0.5 = {ap[:,0].mean():.3f}')
+
+    plt.figure(figsize=(12,8), dpi=150)
+    for k,im in enumerate(test_data):
+        img = im.copy()
+        plt.subplot(3,len(test_data), k+1)
+        img = np.vstack((img, np.zeros_like(img)[:1]))
+        img = img.transpose(1,2,0)
+        plt.imshow(img)
+        plt.axis('off')
+        if k==0:
+            plt.title('image')
+
+        plt.subplot(3,len(test_data), len(test_data) + k+1)
+        plt.imshow(masks[k])
+        plt.axis('off')
+        if k==0:
+            plt.title('predicted labels')
+
+        plt.subplot(3,len(test_data), 2*len(test_data) + k+1)
+        plt.imshow(test_labels[k])
+        plt.axis('off')
+        if k==0:
+            plt.title('true labels')
+    plt.tight_layout()
+    
+if __name__ == "__main__":
+    train_model()

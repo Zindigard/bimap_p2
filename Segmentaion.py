@@ -63,7 +63,7 @@ def prepare_image(file: Path):
     return img_rg1
 
 
-def select_channels(img_rg1, channels=['0', '1', '2']):
+def select_channels(img_rg1, channels=['1']):
     selected_channels = []
     for i, c in enumerate(channels):
         if c == 'None':
@@ -85,7 +85,7 @@ def run_segmentation(model, img_selected_channels):
         img_selected_channels,
         batch_size=8,
         diameter=None,
-        flow_threshold=0.8,
+        flow_threshold=0.5,
         cellprob_threshold=0.0,
         min_size=15,
         stitch_threshold=0.0,  # Don't stitch cells

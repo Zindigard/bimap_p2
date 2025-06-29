@@ -10,7 +10,7 @@ import shutil
 
 
 def parse_czi_metadata(metadata_xml: str, filename: str) -> dict:
-    """Extract detailed metadata from CZI XML."""
+    """Extract detailed metadata from CZI XML including laser and exposure time info."""
     root = ET.fromstring(metadata_xml)
     metadata = {
         'filename': filename,
@@ -49,22 +49,53 @@ def parse_czi_metadata(metadata_xml: str, filename: str) -> dict:
     acquisition_date = root.findtext(".//AcquisitionDateAndTime", default="N/A")
     if acquisition_date != "N/A":
         try:
-            # Try to format the date in a more readable way
             dt = datetime.strptime(acquisition_date, "%Y-%m-%dT%H:%M:%S")
             acquisition_date = dt.strftime('%Y-%m-%d %H:%M:%S')
         except ValueError:
             pass
     metadata['acquisition_date'] = acquisition_date
 
-    # Extract channel information if available
+    # Extract channel information with laser and exposure details
     channels = []
     for channel in root.findall(".//Channel"):
-        channel_info = {
-            'name': channel.get('Name', 'N/A'),
-            'excitation_wavelength': channel.findtext(".//ExcitationWavelength", default="N/A"),
-            'emission_wavelength': channel.findtext(".//EmissionWavelength", default="N/A")
-        }
-        channels.append(channel_info)
+        try:
+            # Extract exposure time (convert from seconds to milliseconds)
+            exposure_time = channel.findtext(".//ExposureTime", default="N/A")
+            if exposure_time != "N/A":
+                exposure_time = float(exposure_time) * 1000  # Convert to ms
+                exposure_time = f"{exposure_time:.2f} ms"
+            
+            # Extract laser information
+            laser_info = {}
+            light_source_settings = channel.find(".//LightSourcesSettings/LightSourceSettings")
+            if light_source_settings is not None:
+                laser_ref = light_source_settings.find("LightSourceRef")
+                if laser_ref is not None:
+                    laser_id = laser_ref.get('Id')
+                    # Find laser details by ID
+                    laser = root.find(f".//LightSources/LightSource[@Id='{laser_id}']")
+                    if laser is not None:
+                        laser_info = {
+                            'model': laser.findtext(".//Manufacturer/Model", default="N/A"),
+                            'wavelength': laser.findtext(".//Laser/Wavelength", default="N/A"),
+                            'power': laser.findtext("Power", default="N/A"),
+                            'attenuation': light_source_settings.findtext("Attenuation", default="N/A")
+                        }
+            
+            channel_info = {
+                'name': channel.get('Name', 'N/A'),
+                'excitation_wavelength': channel.findtext(".//ExcitationWavelength", default="N/A"),
+                'emission_wavelength': channel.findtext(".//EmissionWavelength", default="N/A"),
+                'exposure_time': exposure_time,
+                'laser_model': laser_info.get('model', 'N/A'),
+                'laser_wavelength': laser_info.get('wavelength', 'N/A'),
+                'laser_power': laser_info.get('power', 'N/A'),
+                'laser_attenuation': laser_info.get('attenuation', 'N/A')
+            }
+            channels.append(channel_info)
+        except Exception as e:
+            print(f"Error parsing channel metadata: {str(e)}")
+            continue
 
     if channels:
         metadata['channels'] = channels
@@ -162,7 +193,7 @@ def display_czi_images(input_path: str):
 
 
 def save_metadata_to_file(metadata_list: list, output_folder: str):
-    """Save all metadata to a single text file."""
+    """Save all metadata to a single text file with detailed information including laser and exposure settings."""
     output_path = os.path.join(output_folder, "metadata_summary.txt")
     with open(output_path, 'w') as f:
         f.write("CZI Image Metadata Summary\n")
@@ -170,21 +201,45 @@ def save_metadata_to_file(metadata_list: list, output_folder: str):
 
         for metadata in metadata_list:
             f.write(f"File: {metadata['filename']}\n")
-            f.write(f"- Microscope Model: {metadata.get('microscope_model', 'N/A')}\n")
-            f.write(f"- Pixel Size: {metadata.get('pixel_size_x', 'N/A')} (X), "
-                    f"{metadata.get('pixel_size_y', 'N/A')} (Y)\n")
-            f.write(f"- Processing Timestamp: {metadata['timestamp']}\n")
+            f.write(f"Acquisition Date: {metadata.get('acquisition_date', 'N/A')}\n")
+            f.write(f"Processing Timestamp: {metadata['timestamp']}\n\n")
             
-            # Add channel information if available
+            # Microscope information
+            f.write("Microscope Information:\n")
+            f.write(f"- Model: {metadata.get('microscope_model', 'N/A')}\n")
+            f.write(f"- Objective: {metadata.get('objective_model', 'N/A')}\n")
+            f.write(f"  Magnification: {metadata.get('objective_magnification', 'N/A')}x\n")
+            f.write(f"  NA: {metadata.get('objective_na', 'N/A')}\n")
+            f.write(f"  Immersion: {metadata.get('objective_immersion', 'N/A')}\n")
+            f.write(f"- Detector: {metadata.get('detector_model', 'N/A')}\n")
+            f.write(f"- Illumination Type: {metadata.get('illumination_type', 'N/A')}\n\n")
+            
+            # Pixel information
+            f.write("Pixel Information:\n")
+            f.write(f"- X: {metadata.get('pixel_size_x', 'N/A')}\n")
+            f.write(f"- Y: {metadata.get('pixel_size_y', 'N/A')}\n")
+            f.write(f"- Z: {metadata.get('pixel_size_z', 'N/A')}\n\n")
+            
+            # Channel information
             if 'channels' in metadata:
-                f.write("- Channels:\n")
-                for i, channel in enumerate(metadata['channels']):
-                    f.write(f"  Channel {i}:\n")
-                    f.write(f"    Name: {channel.get('name', 'N/A')}\n")
-                    f.write(f"    Excitation: {channel.get('excitation_wavelength', 'N/A')}\n")
-                    f.write(f"    Emission: {channel.get('emission_wavelength', 'N/A')}\n")
+                f.write("Channel Details:\n")
+                for i, channel in enumerate(metadata['channels'], 1):
+                    f.write(f"Channel {i}:\n")
+                    f.write(f"- Name: {channel.get('name', 'N/A')}\n")
+                    f.write(f"- Excitation Wavelength: {channel.get('excitation_wavelength', 'N/A')} nm\n")
+                    f.write(f"- Emission Wavelength: {channel.get('emission_wavelength', 'N/A')} nm\n")
+                    f.write(f"- Exposure Time: {channel.get('exposure_time', 'N/A')}\n")
+                    
+                    # Laser information
+                    if channel.get('laser_model') != 'N/A':
+                        f.write("- Laser Settings:\n")
+                        f.write(f"  Model: {channel.get('laser_model', 'N/A')}\n")
+                        f.write(f"  Wavelength: {channel.get('laser_wavelength', 'N/A')} nm\n")
+                        f.write(f"  Power: {channel.get('laser_power', 'N/A')}\n")
+                        f.write(f"  Attenuation: {channel.get('laser_attenuation', 'N/A')}\n")
+                    f.write("\n")
             
-            f.write("\n")
+            f.write("=" * 40 + "\n\n")
 
 
 def convert_czi_to_tiff(czi_path: str, output_folder: str, metadata: dict):
@@ -422,7 +477,7 @@ if __name__ == "__main__":
     # Define paths
     raw_folder = r"C:\Users\zindi\PycharmProjects\P2\unpacked images\Raw"
     output_folder = r"C:\Users\zindi\PycharmProjects\P2\test_data"
-    brightness_folder = r"C:\Users\zindi\PycharmProjects\P2\train_brightness"
+    brightness_folder = r"C:\Users\zindi\PycharmProjects\P2\test_brightness"
     true_root_folder = r"C:\Users\zindi\PycharmProjects\P2\unpacked images\True"
 
     print(f"Processing {raw_folder}...")

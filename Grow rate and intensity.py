@@ -7,6 +7,9 @@ import tifffile
 import argparse
 import re
 from matplotlib.patches import Polygon
+from matplotlib.gridspec import GridSpec
+from matplotlib.colors import LinearSegmentedColormap
+import matplotlib.patches as mpatches
 
 
 def read_pixel_size_from_metadata(metadata_folder, image_filename):
@@ -169,44 +172,81 @@ def plot_cell_info(ax, region, pixel_size_um, time_interval):
     return info_text, growth_rate, major_line, minor_line, centroid_point
 
 
-def create_intensity_plots(image, mask, cell_num, axs):
-    """Create intensity distribution plots for a cell"""
+def create_pole_to_pole_plots(image, mask, cell_num, axs, pixel_size_um):
+    """Create pole-to-pole intensity plots for a cell"""
     if image.ndim != 3 or image.shape[2] < 3:
         raise ValueError("Image must be RGB (3 channels)")
-
+    
     cell_mask = mask == cell_num
     channels = ['Red', 'Green', 'Blue']
-
-    for i, (channel, ax) in enumerate(zip(channels, axs)):
+    colors = ['red', 'green', 'blue']
+    
+    # Get region properties for orientation
+    region = regionprops(cell_mask.astype(int))[0]
+    y0, x0 = region.centroid
+    angle = region.orientation
+    
+    # Create rotation matrix to align cells horizontally
+    rotation_matrix = np.array([
+        [np.cos(angle), -np.sin(angle)],
+        [np.sin(angle), np.cos(angle)]
+    ])
+    
+    # Get coordinates of cell pixels
+    y, x = np.where(cell_mask)
+    coords = np.vstack((x - x0, y - y0)).T
+    rotated_coords = np.dot(coords, rotation_matrix)
+    
+    # Normalize coordinates to -1 to 1 range along major axis
+    x_rot = rotated_coords[:, 0]
+    x_norm = x_rot / np.max(np.abs(x_rot))
+    
+    # Create colormap from purple to yellow
+    purple_yellow = LinearSegmentedColormap.from_list('purple_yellow', 
+                                                    ['purple', 'yellow'])
+    
+    for i, (channel, color, ax) in enumerate(zip(channels, colors, axs)):
         channel_data = image[:, :, i]
         masked_data = channel_data[cell_mask]
         
-        # Normalize based on dtype
+        # Normalize intensity based on dtype
         if channel_data.dtype == np.uint16:
             masked_data = masked_data / 65535.0
         elif channel_data.dtype == np.uint8:
             masked_data = masked_data / 255.0
         
-        ax.cla()
-        ax.hist(masked_data.flatten(), bins=50, color=channel.lower(), alpha=0.7)
-        ax.set_title(f'{channel} Channel Intensity')
-        ax.set_ylabel('Pixel Count')
+        ax.clear()
+        
+        # Create scatter plot colored by intensity
+        sc = ax.scatter(x_norm, [i]*len(x_norm), c=masked_data, 
+                       cmap=purple_yellow, s=5, alpha=0.7)
+        
+        # Add colorbar
+        cbar = plt.colorbar(sc, ax=ax, orientation='vertical', pad=0.02)
+        cbar.set_label('Intensity')
+        
+        ax.set_title(f'{channel} Channel Pole-to-Pole')
+        ax.set_xlabel('Normalized Position (-1 to 1)')
+        ax.set_ylabel('')
+        ax.set_yticks([])
         ax.grid(True)
-        ax.set_xlim(0, 1)  # Consistent scale for comparison
 
 
 def analyze_image_pair_interactive(mask_path, image_path, pixel_size_um, time_interval=40):
     """Interactive analysis function with mouse hover functionality"""
     masks, image = load_data(mask_path, image_path)
     regions = regionprops(masks)
-
+    
+    # Sort regions by major axis length (longest first)
+    regions.sort(key=lambda x: x.major_axis_length, reverse=True)
+    
     # Create main figure with subplots
-    fig = plt.figure(figsize=(15, 10))
-    gs = fig.add_gridspec(3, 3, width_ratios=[2, 0.05, 1])  # 3 rows, 3 columns
+    fig = plt.figure(figsize=(18, 10))
+    gs = GridSpec(3, 3, width_ratios=[2, 0.05, 1])  # 3 rows, 3 columns
     
     # Main image takes left 2 columns and all rows
     ax_img = fig.add_subplot(gs[:, 0])
-
+    
     # Create a column for the info box between image and plots
     info_ax = fig.add_subplot(gs[:, 1])
     info_ax.axis('off')  # Hide the axes
@@ -217,104 +257,98 @@ def analyze_image_pair_interactive(mask_path, image_path, pixel_size_um, time_in
     ax_blue = fig.add_subplot(gs[2, 2])   # Bottom right
     
     intensity_axs = [ax_red, ax_green, ax_blue]
-
+    
     # Display the image with mask borders
     display_img = display_image_with_mask_borders(ax_img, image, masks)
-
+    
     # Create a dictionary to map coordinates to cell numbers
     coord_to_cell = {}
     for i, region in enumerate(regions, 1):
         for coord in region.coords:
             coord_to_cell[(coord[0], coord[1])] = i
-
+    
     # Create text box for cell info (position adjusted)
     info_box = fig.text(0.72, 0.95, "", 
                        bbox=dict(facecolor='white', alpha=0.8, edgecolor='black'),
                        fontsize=9,
                        linespacing=1.5)
-
+    
     # Create a cursor
     cursor = Cursor(ax_img, useblit=True, color='red', linewidth=1)
-
+    
     # Initialize variables to store plot elements
     last_contour = None
     major_axis_line = None
     minor_axis_line = None
     centroid_point = None
-
+    
     def on_mouse_move(event):
         nonlocal last_contour, major_axis_line, minor_axis_line, centroid_point
-
+        
         if event.inaxes != ax_img:
             return
-
+        
         try:
             x, y = int(event.xdata), int(event.ydata)
         except (TypeError, ValueError):
-            # Handle cases where coordinates are None or invalid
             return
-
+        
         # Remove previous elements if they exist
         for element in [last_contour, major_axis_line, minor_axis_line, centroid_point]:
             if element is not None and element in ax_img.lines or element in ax_img.collections:
                 try:
                     element.remove()
                 except ValueError:
-                    pass  # Element was already removed
-            element = None
-
+                    pass
+        
         # Find which cell the cursor is on
         cell_num = coord_to_cell.get((y, x), None)
-
+        
         if cell_num is not None and 1 <= cell_num <= len(regions):
             try:
                 region = regions[cell_num - 1]
-
+                
                 # Highlight the current cell with a thicker border
                 mask = (masks == cell_num).astype(np.uint8)
                 contours = find_contours(mask, 0.5)
                 for contour in contours:
                     last_contour = ax_img.plot(contour[:, 1], contour[:, 0], 
                                              linewidth=2, color='cyan')[0]
-
+                
                 # Update cell info
                 info_text, _, major_axis_line, minor_axis_line, centroid_point = plot_cell_info(
                     ax_img, region, pixel_size_um, time_interval
                 )
                 info_box.set_text(info_text)
-
-                # Update intensity plots
+                
+                # Update pole-to-pole plots
                 try:
-                    create_intensity_plots(image, masks, cell_num, intensity_axs)
+                    create_pole_to_pole_plots(image, masks, cell_num, intensity_axs, pixel_size_um)
                 except ValueError as e:
-                    print(f"Error creating intensity plots: {e}")
+                    print(f"Error creating pole-to-pole plots: {e}")
                     for ax in intensity_axs:
                         ax.cla()
                         ax.set_title('')
                         ax.set_ylabel('')
                         ax.grid(False)
-
+            
             except IndexError:
-                # Handle case where cell_num is out of bounds
                 pass
         else:
-            # Clear the info box when not hovering over a cell
             info_box.set_text("")
-            
-            # Clear intensity plots
             for ax in intensity_axs:
                 ax.cla()
                 ax.set_title('')
                 ax.set_ylabel('')
                 ax.grid(False)
-
+        
         try:
             fig.canvas.draw_idle()
         except:
             pass
-
+    
     fig.canvas.mpl_connect('motion_notify_event', on_mouse_move)
-
+    
     plt.suptitle(f"Interactive Analysis - {image_path.stem}\n"
                 f"Pixel size: {pixel_size_um} µm | Time interval: {time_interval} min")
     plt.tight_layout()
@@ -329,7 +363,7 @@ def main():
     args = parser.parse_args()
 
     sam_folder = Path(r"C:\Users\zindi\PycharmProjects\P2\Evaluations\SAM")
-    brightness_folder = Path(r"C:\Users\zindi\PycharmProjects\P2\train_brightness")
+    brightness_folder = Path(r"C:\Users\zindi\PycharmProjects\P2\test_brightness")
     metadata_folder = Path(r"C:\Users\zindi\PycharmProjects\P2\test_data")
 
     file_pairs = find_matching_files(sam_folder, brightness_folder)

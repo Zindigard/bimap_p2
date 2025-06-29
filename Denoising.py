@@ -136,20 +136,22 @@ def calculate_quality_metrics(original: np.ndarray, denoised: np.ndarray) -> Dic
 
 
 def visualize_comparison(original: np.ndarray, denoised: np.ndarray, metrics: Dict):
-    """Enhanced visualization with metrics overlay and white background for difference map.
-
+    """Simplified visualization focusing on absolute difference.
+    
     Args:
         original: Original image in [0,1] range
         denoised: Denoised image in [0,1] range
         metrics: Dictionary of quality metrics
     """
     fig = plt.figure(figsize=(18, 6))
-
+    
+    # Original image
     ax1 = plt.subplot(1, 3, 1)
     ax1.imshow(original)
     ax1.set_title(f"Original Image\nRange: [{original.min():.2f}, {original.max():.2f}]")
     ax1.axis('off')
-
+    
+    # Denoised image
     ax2 = plt.subplot(1, 3, 2)
     ax2.imshow(denoised)
     ax2.set_title(
@@ -159,22 +161,13 @@ def visualize_comparison(original: np.ndarray, denoised: np.ndarray, metrics: Di
         f"MSE: {metrics['mse']:.4f}"
     )
     ax2.axis('off')
-
-    # Enhanced difference with white background
+    
+    # Absolute difference with enhanced visualization
     difference = np.abs(original - denoised)
-    difference = (difference - difference.min()) / (difference.max() - difference.min() + 1e-10)
-
-    # Create a white background (set all pixels to 1)
-    white_bg = np.ones_like(difference)
-
-    # Blend difference with white background (adjust alpha as needed)
-    alpha = 0.7  # Transparency of difference over white background
-    blended_diff = white_bg * (1 - alpha) + difference * alpha
-
     ax3 = plt.subplot(1, 3, 3)
-    im = ax3.imshow(blended_diff, cmap='jet', vmin=0, vmax=1)
+    im = ax3.imshow(difference, cmap='inferno', vmin=0, vmax=0.3)  # Clip at 0.3 for better visualization
     plt.colorbar(im, ax=ax3, fraction=0.046, pad=0.04)
-    ax3.set_title("Difference Map (White Background)")
+    ax3.set_title(f"Absolute Difference\nMax: {difference.max():.4f}, Mean: {difference.mean():.4f}")
     ax3.axis('off')
 
     plt.tight_layout()
@@ -365,7 +358,7 @@ if __name__ == "__main__":
     # Configuration
     input_dir = r"C:\Users\zindi\PycharmProjects\P2\test_data"
     output_dir = r"C:\Users\zindi\PycharmProjects\P2\denoised"
-    sigma = 0.5  # Initial noise level estimate
+    sigma = 0.4  # Initial noise level estimate
     overwrite = False
 
     # Run processing

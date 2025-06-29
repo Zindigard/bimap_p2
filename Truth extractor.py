@@ -1,24 +1,20 @@
 import cv2
 import numpy as np
-from skimage import io, morphology
+from skimage import io
 import os
-import matplotlib.pyplot as plt
 from read_roi import read_roi_zip
 
 def visualize_rois_white_on_rgb(
         roi_zip_path: str,
         image_path: str,
-        output_path: str = None,
-        show_plot: bool = False,
 ) -> np.ndarray:
     """
     Visualizes ROIs in white on original RGB images
+    Returns the image with ROIs drawn
     """
     rois = read_roi_zip(roi_zip_path)
-
     image = cv2.imread(image_path, cv2.IMREAD_COLOR)
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-
     white = (255, 255, 255)
     line_thickness = 2
 
@@ -56,61 +52,47 @@ def visualize_rois_white_on_rgb(
         except Exception as e:
             print(f"Error drawing ROI {name}: {str(e)}")
 
-    # Save output
-    if output_path:
-        cv2.imwrite(output_path, cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
-
     return image
 
-
 def create_interior_mask_from_roi_image(
-        roi_image_path: str,
-        output_mask_path: str = None,
+        roi_image: np.ndarray,
         line_threshold: int = 150,
         min_contour_area: int = 5,
 ) -> np.ndarray:
     """
     Creates a binary mask where regions inside white ROIs are 1.
-    Assumes input ROIs are already closed contours (from visualize_rois_white_on_rgb).
-
+    
     Args:
-        roi_image_path: Path to the image with white ROIs (from visualize_rois_white_on_rgb).
-        output_mask_path: Where to save the mask (optional).
-        line_threshold: Brightness threshold for detecting white lines (0-255).
-        min_contour_area: Minimum area to consider a valid ROI (removes noise).
-
+        roi_image: Image array with white ROIs
+        line_threshold: Brightness threshold for detecting white lines (0-255)
+        min_contour_area: Minimum area to consider a valid ROI (removes noise)
+    
     Returns:
-        Binary mask (np.uint8: 0 or 1).
+        Binary mask (np.uint8: 0 or 1)
     """
-
-    roi_image = cv2.imread(roi_image_path, cv2.IMREAD_COLOR)
-    gray = cv2.cvtColor(roi_image, cv2.COLOR_BGR2GRAY)
-
-    #  thresholding
+    gray = cv2.cvtColor(roi_image, cv2.COLOR_RGB2GRAY)
     _, binary = cv2.threshold(gray, line_threshold, 255, cv2.THRESH_BINARY)
-
-    # Find contours
     contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-    # Create mask
     mask = np.zeros_like(gray, dtype=np.uint8)
+    
     for cnt in contours:
         if cv2.contourArea(cnt) >= min_contour_area:
             cv2.drawContours(mask, [cnt], -1, 1, thickness=cv2.FILLED)
-
-    if output_mask_path:
-        io.imsave(output_mask_path, mask * 255)
+    
     return mask
-
 
 def process_all_folders(
         input_root: str = r"C:\Users\zindi\PycharmProjects\P2\unpacked images\True",
-        output_root: str = r"C:\Users\zindi\PycharmProjects\P2\True processed",
+        processed_output_root: str = r"C:\Users\zindi\PycharmProjects\P2\True processed",
+        mask_output_root: str = r"C:\Users\zindi\PycharmProjects\P2\Evaluations\Ground",
         roi_suffix: str = "_ROISET.zip",
         img_extensions: tuple = (".tif", ".tiff", ".png", ".jpg"),
-        mask_output_root: str = r"C:\Users\zindi\PycharmProjects\P2\Evaluations\Ground",
 ):
-
+    """
+    Process all folders, saving results only in the specified output directories
+    """
+    # Create output directories if they don't exist
+    os.makedirs(processed_output_root, exist_ok=True)
     os.makedirs(mask_output_root, exist_ok=True)
 
     for folder_name in os.listdir(input_root):
@@ -121,6 +103,7 @@ def process_all_folders(
 
         print(f"\nProcessing: {folder_name}")
 
+        # Find ROI zip file
         roi_zip = None
         for f in os.listdir(folder_path):
             if f.endswith(roi_suffix):
@@ -131,7 +114,8 @@ def process_all_folders(
             print(f"  ! No ROI zip found")
             continue
 
-        base_name = roi_zip[:-len(roi_suffix)]
+        # Find corresponding image file
+        base_name = os.path.splitext(roi_zip)[0][:-len("_ROISET")]  # Remove "_ROISET.zip"
         img_file = None
 
         for ext in img_extensions:
@@ -145,33 +129,32 @@ def process_all_folders(
             continue
 
         try:
+            # Process the image
             roi_drawn_image = visualize_rois_white_on_rgb(
                 roi_zip_path=roi_zip,
                 image_path=img_file,
-                output_path=None,
-                show_plot=False,
             )
 
+            # Save processed image (with ROIs drawn)
+            processed_img_name = f"{os.path.basename(base_name)}_processed.tif"
+            processed_img_path = os.path.join(processed_output_root, processed_img_name)
+            cv2.imwrite(processed_img_path, cv2.cvtColor(roi_drawn_image, cv2.COLOR_RGB2BGR))
 
-            temp_roi_drawn_path = os.path.join(output_root, f"temp_roi_drawn_{folder_name}.tif")
-            cv2.imwrite(temp_roi_drawn_path, cv2.cvtColor(roi_drawn_image, cv2.COLOR_RGB2BGR))
-
-            mask_output_name = f"{os.path.basename(base_name)}_mask.tif"
-            mask_output_path = os.path.join(mask_output_root, mask_output_name)
-
+            # Create and save mask
             mask = create_interior_mask_from_roi_image(
-                roi_image_path=temp_roi_drawn_path,
-                output_mask_path=mask_output_path,
-                line_threshold=200,  # Adjust as needed
+                roi_image=roi_drawn_image,
+                line_threshold=200,
             )
 
-            print(f"  ✓ Mask saved to {mask_output_path}")
+            mask_name = f"{os.path.basename(base_name)}_mask.tif"
+            mask_path = os.path.join(mask_output_root, mask_name)
+            io.imsave(mask_path, mask * 255)
 
-            os.remove(temp_roi_drawn_path)
+            print(f"  ✓ Processed image saved to {processed_img_path}")
+            print(f"  ✓ Mask saved to {mask_path}")
 
         except Exception as e:
             print(f"  ! Processing failed: {str(e)}")
-
 
 if __name__ == "__main__":
     process_all_folders()

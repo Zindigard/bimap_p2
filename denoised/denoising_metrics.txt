@@ -3,15 +3,15 @@
 Total Images Processed: 1
 
 SSIM Statistics:
-- Average: 0.9973
-- Median: 0.9973
-- Range: [0.9973, 0.9973]
+- Average: 0.9970
+- Median: 0.9970
+- Range: [0.9970, 0.9970]
 - Std Dev: 0.0000
 
 PSNR Statistics:
-- Average: 58.65 dB
-- Median: 58.65 dB
-- Range: [58.65, 58.65] dB
+- Average: 58.31 dB
+- Median: 58.31 dB
+- Range: [58.31, 58.31] dB
 - Std Dev: 0.00
 
 MSE Statistics:
