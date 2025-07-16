@@ -20,7 +20,6 @@ def post_process_masks(masks):
     cleaned_masks = np.zeros_like(masks)
     max_label = masks.max()
 
-    # Only proceed if there are any labels
     if max_label > 0:
         for i in range(1, max_label + 1):
             mask = masks == i
@@ -64,29 +63,32 @@ def prepare_image(file: Path):
 
 
 def select_channels(img_rg1, channels=['0','1','2']):
-    selected_channels = []
-    for i, c in enumerate(channels):
+    selected_indices = []
+    for c in channels:
         if c == 'None':
             continue
-        if int(c) > img_rg1.ndim:
-            assert False, 'invalid channel index, must have index greater or equal to the number of channels'
-        if c != 'None':
-            selected_channels.append(int(c))
-
-    img_selected_channels = np.zeros_like(img_rg1)
-    print('Selected channels:', selected_channels)
-    img_selected_channels[:, :, :len(selected_channels)] = img_rg1[:, :, selected_channels]
-    return img_selected_channels
+        c_int = int(c)
+        if c_int >= img_rg1.shape[-1]:  
+            raise ValueError(f'Invalid channel index {c_int}. Image has {img_rg1.shape[-1]} channels.')
+        selected_indices.append(c_int)
+    
+    print('Selected channels for composite:', selected_indices)
+    
+    composite = np.zeros(img_rg1.shape[:2], dtype=img_rg1.dtype)
+    for idx in selected_indices:
+        composite += img_rg1[:, :, idx]
+    
+    return composite[..., np.newaxis]
 
 
 def run_segmentation(model, img_selected_channels):
     print("Running Cellpose segmentation...")
-    masks, flows, styles = model.eval(
+    masks, flows, styles = model.eval( 
         img_selected_channels,
         batch_size=8,
         diameter=None,
-        flow_threshold=0.4,
-        cellprob_threshold=0.0,
+        flow_threshold=0.6,
+        cellprob_threshold=-0.5,
         min_size=15,
         stitch_threshold=0.0,  # Don't stitch cells
     )

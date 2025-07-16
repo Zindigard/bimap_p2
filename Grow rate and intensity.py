@@ -3,10 +3,14 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Cursor
 from skimage.measure import regionprops, find_contours
+from skimage.transform import rotate
 import tifffile
 import argparse
 import re
 from matplotlib.gridspec import GridSpec
+from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.collections import LineCollection
+from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
 from matplotlib.colors import LinearSegmentedColormap
 
 
@@ -71,11 +75,8 @@ def load_data(mask_path, image_path):
     masks = np.load(mask_path)
     image = tifffile.imread(image_path)
     
-    # Fix channel order for matplotlib (convert from channels-first to channels-last)
     if image.ndim == 3:
-        # Check if channel dimension is first
-        if image.shape[0] in [1, 3, 4]:  # Typical channel sizes
-            # Move channel dimension to last position
+        if image.shape[0] in [1, 3, 4]:  
             image = np.transpose(image, (1, 2, 0))
     
     return masks, image
@@ -92,7 +93,7 @@ def display_image_with_mask_borders(ax, image, masks):
     
     ax.imshow(display_img)
     
-    # Draw all cell outlines in yellow
+    # outlines  
     for i in range(1, masks.max() + 1):
         mask = (masks == i).astype(np.uint8)
         contours = find_contours(mask, 0.5)
@@ -110,90 +111,71 @@ def calculate_growth_rate(major_length_px, pixel_size_um, time_interval=40):
 
 def show_cell_details(image, masks, cell_num, pixel_size_um, time_interval=40):
     """Show detailed view with optimized layout and consistent plot sizes"""
-    # Determine number of channels (assume 3 channels)
     num_channels = 3
     
-    # Create figure with dark theme
-    fig = plt.figure(figsize=(18, 15), facecolor='black')  # Increased height for better proportions
+    fig = plt.figure(figsize=(18, 15), facecolor='black')
     gs = fig.add_gridspec(3, 2, height_ratios=[1.5, 1, 1], width_ratios=[1, 1])
     
-    # Top-left: Cell image with axes
     ax_cell = fig.add_subplot(gs[0, 0])
     
-    # Display original image
     if image.dtype == np.uint16:
         display_img = image.astype(np.float32) / 65535.0
     else:
         display_img = image
     ax_cell.imshow(display_img)
     
-    # Get cell mask and calculate properties
     cell_mask = (masks == cell_num).astype(np.uint8)
     region = regionprops(cell_mask)[0]
     
-    # Extract key properties
     centroid_y, centroid_x = region.centroid
     major_length = region.major_axis_length
     minor_length = region.minor_axis_length
     
-    # Calculate growth rate (added from first code)
     growth_rate = calculate_growth_rate(major_length, pixel_size_um, time_interval)
     
-    # ROTATION: Use orientation + 90° (π/2 radians) for axes
     orientation = region.orientation + np.pi/2
     
-    # Calculate major axis endpoints
     major_x1 = centroid_x + (major_length/2) * np.cos(orientation)
     major_y1 = centroid_y - (major_length/2) * np.sin(orientation)
     major_x2 = centroid_x - (major_length/2) * np.cos(orientation)
     major_y2 = centroid_y + (major_length/2) * np.sin(orientation)
     
-    # Calculate minor axis endpoints
     minor_orientation = orientation + np.pi/2
     minor_x1 = centroid_x + (minor_length/2) * np.cos(minor_orientation)
     minor_y1 = centroid_y - (minor_length/2) * np.sin(minor_orientation)
     minor_x2 = centroid_x - (minor_length/2) * np.cos(minor_orientation)
     minor_y2 = centroid_y + (minor_length/2) * np.sin(minor_orientation)
     
-    # Highlight cell border
     contours = find_contours(cell_mask, 0.5)
     for contour in contours:
         ax_cell.plot(contour[:, 1], contour[:, 0], linewidth=1.5, color='cyan')
     
-    # Plot axes and centroid
     ax_cell.plot([major_x1, major_x2], [major_y1, major_y2], 'w-', linewidth=2)
     ax_cell.plot([minor_x1, minor_x2], [minor_y1, minor_y2], 'w-', linewidth=2)
     ax_cell.plot(centroid_x, centroid_y, 'yo', markersize=8)
     
-    # Add legend to top right
     ax_cell.text(0.98, 0.98, "Major Axis\nMinor Axis\nCentroid", 
                 transform=ax_cell.transAxes, 
                 color='white', fontsize=10,
                 verticalalignment='top', horizontalalignment='right',
                 bbox=dict(boxstyle='round', facecolor='black', alpha=0.7))
     
-    # Add title
     ax_cell.set_title(f"Cell {cell_num}", fontsize=14, color='white')
     
-    # Zoom in on the cell with 10% margin
     minr, minc, maxr, maxc = region.bbox
     margin = max(maxr - minr, maxc - minc) * 0.1
     ax_cell.set_xlim(minc - margin, maxc + margin)
     ax_cell.set_ylim(maxr + margin, minr - margin)
     
-    # Remove grid and ticks
     ax_cell.grid(False)
     ax_cell.set_xticks([])
     ax_cell.set_yticks([])
     
-    # Top-right: Green channel intensity plot
     ax_green = fig.add_subplot(gs[0, 1])
     
-    # Middle-left: Measurement information
     ax_info = fig.add_subplot(gs[1, 0])
-    ax_info.axis('off')  # Turn off axis
+    ax_info.axis('off')  
     
-    # Create measurement text with growth rate (added from first code)
     info_text = (
         f"Cell Measurements:\n\n"
         f"Length: {major_length * pixel_size_um:.2f} µm\n"
@@ -203,111 +185,88 @@ def show_cell_details(image, masks, cell_num, pixel_size_um, time_interval=40):
         f"Time Interval: {time_interval} min"
     )
     
-    # Add text to plot centered
     ax_info.text(0.5, 0.5, info_text, fontsize=14, color='white',
                 verticalalignment='center', horizontalalignment='center',
                 fontfamily='monospace', transform=ax_info.transAxes)
     
-    # Middle-right: Red channel intensity plot
     ax_red = fig.add_subplot(gs[1, 1])
     
-    # Bottom-right: Blue channel intensity plot
     ax_blue = fig.add_subplot(gs[2, 1])
     
-    # Create coordinate system with major axis as x-axis
     A = np.array([major_x1, major_y1])
     B = np.array([major_x2, major_y2])
     L = np.linalg.norm(B - A)
     direction = (B - A) / L if L > 0 else np.array([1, 0])
     perp = np.array([-direction[1], direction[0]])
     
-    # Get cell points for spatial intensity calculations
     cell_points = np.where(cell_mask)
     
-    # Define channel plots
     channel_axes = [ax_green, ax_red, ax_blue]
     channel_indices = [1, 0, 2]  # Green, Red, Blue
     channel_names = ["Green", "Red", "Blue"]
     
-    # Channel-specific colormaps from black to pure color
     colormaps = [
         LinearSegmentedColormap.from_list('green', ['#000000', '#00ff00']),
         LinearSegmentedColormap.from_list('red', ['#000000', '#ff0000']),
         LinearSegmentedColormap.from_list('blue', ['#000000', '#0000ff'])
     ]
     
-    # Process each channel
     for ax, channel_idx, channel_name, colormap in zip(channel_axes, channel_indices, channel_names, colormaps):
-        # Set axis background to black
         ax.set_facecolor('black')
         
-        # Get channel data
         if image.ndim == 2:
             channel_data = image
         else:
             channel_data = image[:, :, channel_idx]
         
-        # Create grid for spatial intensity mapping
         num_x_bins = 100
         num_y_bins = 50
         spatial_grid = np.zeros((num_y_bins, num_x_bins))
         count_grid = np.zeros((num_y_bins, num_x_bins))
         
-        # Transform cell points to new coordinate system
         for y, x in zip(*cell_points):
             P = np.array([x, y])
             vec = P - A
-            x_pos = np.dot(vec, direction)  # Position along major axis
-            y_pos = np.dot(vec, perp)       # Distance from major axis
+            x_pos = np.dot(vec, direction)  
+            y_pos = np.dot(vec, perp)      
             
-            # Normalize positions to grid coordinates
             x_idx = int(np.clip(x_pos / L * num_x_bins, 0, num_x_bins-1))
             y_idx = int(np.clip((y_pos + minor_length/2) / minor_length * num_y_bins, 0, num_y_bins-1))
             
-            # Add intensity to grid
             intensity = channel_data[y, x]
             spatial_grid[y_idx, x_idx] += intensity
             count_grid[y_idx, x_idx] += 1
         
-        # Calculate average intensity
         with np.errstate(divide='ignore', invalid='ignore'):
             avg_intensity = np.divide(spatial_grid, count_grid)
             avg_intensity[count_grid == 0] = 0
         
-        # Plot spatial intensity with channel-specific colormap
         im = ax.imshow(avg_intensity, cmap=colormap, aspect='auto', 
                       extent=[0, major_length * pixel_size_um, 
                               -minor_length/2 * pixel_size_um, 
                               minor_length/2 * pixel_size_um],
                       origin='lower')
         
-        # Add colorbar with white label
         cbar = plt.colorbar(im, ax=ax)
         cbar.set_label('Intensity', color='white')
         cbar.ax.yaxis.set_tick_params(color='white')
         cbar.ax.yaxis.label.set_color('white')
         plt.setp(plt.getp(cbar.ax.axes, 'yticklabels'), color='white')
         
-        # Add labels and title with white text
         ax.set_xlabel('Position along cell (µm)', fontsize=10, color='white')
         ax.set_ylabel('Distance from axis (µm)', fontsize=10, color='white')
         ax.set_title(f'{channel_name} Channel Intensity', fontsize=12, color='white')
         
-        # Add center line
         ax.axhline(0, color='white', linestyle='--', alpha=0.5)
         
-        # Add grid for better readability
         ax.grid(True, linestyle=':', alpha=0.3, color='white')
         
-        # Set tick colors to white
         ax.tick_params(axis='x', colors='white')
         ax.tick_params(axis='y', colors='white')
     
-    # Adjust layout
     plt.tight_layout()
     plt.subplots_adjust(hspace=0.3, wspace=0.3)
     
-    # Set figure text color to white
     for text in fig.texts:
         text.set_color('white')
     
@@ -327,21 +286,19 @@ def analyze_image_pair_interactive(mask_path, image_path, pixel_size_um):
     """Interactive analysis function with cell selection"""
     masks, image = load_data(mask_path, image_path)
     regions = regionprops(masks)
+   
 
-    # Create main figure
     fig, ax = plt.subplots(figsize=(10, 10))
     display_img = display_image_with_mask_borders(ax, image, masks)
     
-    # Create coordinate to cell number mapping
     coord_to_cell = {}
     for i, region in enumerate(regions, 1):
         for coord in region.coords:
-            coord_to_cell[(coord[0], coord[1])] = i  # row (y), column (x)
+            coord_to_cell[(coord[0], coord[1])] = i  
 
     # Add cursor
     cursor = Cursor(ax, useblit=True, color='red', linewidth=1)
     
-    # Variable to store highlighted contour artist
     highlighted_contour = None
     
     def on_click(event):
@@ -350,54 +307,233 @@ def analyze_image_pair_interactive(mask_path, image_path, pixel_size_um):
         if event.inaxes != ax:
             return
         
-        try:
-            x = int(round(event.xdata))
-            y = int(round(event.ydata))
-        except (TypeError, ValueError):
-            return
+        # Get coordinates directly from event
+        x = event.xdata
+        y = event.ydata
         
-        # Remove previous highlight safely
         if highlighted_contour is not None:
             try:
                 highlighted_contour.remove()
             except ValueError:
-                pass  # Already removed by other means
-            finally:
-                highlighted_contour = None
+                pass
+            highlighted_contour = None
             fig.canvas.draw_idle()
         
-        # Check bounds and get cell number
-        height, width = image.shape[:2]
-        if 0 <= x < width and 0 <= y < height:
-            cell_num = coord_to_cell.get((y, x), None)
-        else:
-            cell_num = None
+        # Directly access mask array with proper coordinate conversion
+        height, width = masks.shape[:2]
         
-        if cell_num:
-            print(f"Selected Cell: {cell_num}")
-            # Highlight selected cell in cyan
-            mask = (masks == cell_num).astype(np.uint8)
-            contours = find_contours(mask, 0.5)
-            if contours:
-                # Find the longest contour
-                contour = max(contours, key=len)
-                highlighted_contour = ax.plot(
-                    contour[:, 1], contour[:, 0],
-                    linewidth=2, color='cyan'
-                )[0]
-                fig.canvas.draw_idle()
+        if 0 <= y < height and 0 <= x < width:
+            # Convert to integer indices (truncation is better than rounding)
+            row = int(y)  # Y coordinate = row index
+            col = int(x)  # X coordinate = column index
             
-            # Show cell details
-            show_cell_details(image, masks, cell_num, pixel_size_um)
-        else:
-            # Clicked on empty space - just redraw to remove any highlights
-            fig.canvas.draw_idle()
+            # Get cell number directly from mask array
+            cell_num = masks[row, col]
+            
+            # Skip background (0)
+            if cell_num > 0:
+                print(f"Selected Cell: {cell_num}")
+                
+                # Highlight selected cell
+                mask = (masks == cell_num).astype(np.uint8)
+                contours = find_contours(mask, 0.5)
+                if contours:
+                    contour = max(contours, key=len)
+                    highlighted_contour = ax.plot(
+                        contour[:, 1], contour[:, 0],
+                        linewidth=2, color='cyan'
+                    )[0]
+                    fig.canvas.draw_idle()
+                
+                # Show cell details
+                show_cell_details(image, masks, cell_num, pixel_size_um)
+                return
+        
+        # If we get here, no cell was selected
+        fig.canvas.draw_idle()
 
-    # Connect click event
     fig.canvas.mpl_connect('button_press_event', on_click)
     
-    plt.title(f"Click on a cell to analyze\n{image_path.stem} | Pixel size: {pixel_size_um} µm")
+    plt.title(f"Cell analyzer\n{image_path.stem} | Pixel size: {pixel_size_um} µm")
     plt.tight_layout()
+    plt.show()
+
+    plot_all_channels_intensity_profiles(
+    masks, 
+    image,
+    pixel_size_um
+)
+  
+
+def plot_all_channels_intensity_profiles(masks, image, pixel_size_um):
+    """Plot intensity profiles for all channels colormaps"""
+   
+    regions = regionprops(masks)
+    if len(regions) == 0:
+        print("No cells found")
+        return
+    
+    valid_regions = [r for r in regions if r.major_axis_length > 0]
+    if len(valid_regions) == 0:
+        print("No valid cells found")
+        return
+    
+    sorted_regions = sorted(valid_regions, key=lambda r: r.major_axis_length)
+    num_valid = len(sorted_regions)
+    
+    purple_yellow = LinearSegmentedColormap.from_list(
+        'compact_purple_yellow', 
+        [
+            '#2E0854', 
+            '#8A2BE2',  
+            '#FFD700'   
+        ],
+        N=128  
+    )
+    
+    channels = [
+        {"idx": 1, "name": "Green"},
+        {"idx": 0, "name": "Red"},
+        {"idx": 2, "name": "Blue"}]
+    
+    fig = plt.figure(figsize=(16, 18), facecolor='black')
+    main_gs = GridSpec(3, 1, height_ratios=[1, 1, 1], hspace=0.35)
+    
+    axes = []
+    cbar_axes = []
+    
+    for i, channel in enumerate(channels):
+        channel_gs = GridSpecFromSubplotSpec(1, 2, 
+                                    subplot_spec=main_gs[i],
+                                    width_ratios=[0.97, 0.03],
+                                    wspace=0.02) 
+        
+        ax = fig.add_subplot(channel_gs[0])  
+        ax.set_facecolor('black')
+        axes.append(ax)
+        
+        cax = fig.add_subplot(channel_gs[1]) 
+        cbar_axes.append(cax)
+    
+    max_length_um = max(r.major_axis_length * pixel_size_um for r in sorted_regions)
+    
+    for ax, cax, channel in zip(axes, cbar_axes, channels):
+        if image.ndim == 2:
+            channel_data = image
+        else:
+            channel_data = image[:, :, channel["idx"]]
+        
+        all_segments = []
+        all_colors = []
+        
+        channel_min_intensity = float('inf')
+        channel_max_intensity = 0
+        
+        #  intensity 
+        for region in sorted_regions:
+            label = region.label
+            cell_mask = (masks == label)
+            y_points, x_points = np.where(cell_mask)
+            
+            for y, x in zip(y_points, x_points):
+                intensity = channel_data[y, x]
+                if intensity > channel_max_intensity:
+                    channel_max_intensity = intensity
+                if intensity < channel_min_intensity:
+                    channel_min_intensity = intensity
+        
+        if channel_min_intensity == float('inf'):
+            channel_min_intensity = 0
+        if channel_max_intensity == 0:
+            channel_max_intensity = 1
+            
+        if np.any(channel_data):
+            vmin = np.percentile(channel_data, 2)
+            vmax = np.percentile(channel_data, 98)
+        else:
+            vmin, vmax = 0, 1
+        norm = plt.Normalize(vmin, vmax)
+            
+        for i, region in enumerate(sorted_regions):
+            label = region.label
+            L = region.major_axis_length
+            length_um = L * pixel_size_um
+            
+            cell_mask = (masks == label)
+            y_points, x_points = np.where(cell_mask)
+            
+            # orientation
+            cy, cx = region.centroid
+            orientation = region.orientation
+            dx = np.cos(orientation) * 0.5 * L
+            dy = np.sin(orientation) * 0.5 * L
+            
+            # Direction 
+            direction = np.array([-dx, dy])
+            direction_norm = direction / np.linalg.norm(direction)
+            
+            num_bins = 50
+            bin_means = np.zeros(num_bins)
+            bin_counts = np.zeros(num_bins)
+            positions = np.linspace(-length_um/2, length_um/2, num_bins)
+            
+            for y, x in zip(y_points, x_points):
+                vec = np.array([x - cx, y - cy])
+                pos = np.dot(vec, direction_norm) * pixel_size_um
+                
+                bin_idx = int(np.clip((pos + length_um/2) / length_um * num_bins, 0, num_bins-1))
+                intensity = channel_data[y, x]
+                
+                bin_means[bin_idx] += intensity
+                bin_counts[bin_idx] += 1
+            
+            # mean 
+            valid = bin_counts > 0
+            bin_means[valid] /= bin_counts[valid]
+            
+            
+            for j in range(num_bins - 1):
+                if valid[j] and valid[j+1]:
+                    y_start = positions[j]
+                    y_end = positions[j+1]
+                    segment = [(i+1, y_start), (i+1, y_end)]
+                    all_segments.append(segment)
+                    
+                    avg_intensity = (bin_means[j] + bin_means[j+1]) / 2
+                    all_colors.append(avg_intensity)
+        
+        lc = LineCollection(
+            all_segments,
+            array=np.array(all_colors),
+            cmap=purple_yellow,
+            norm=norm,
+            linewidth=1.5, 
+            alpha=0.9
+        )
+        ax.add_collection(lc)
+        
+        ax.set_xlim(0, num_valid + 1)
+        ax.set_ylim(-max_length_um * 0.55, max_length_um * 0.55)
+        ax.set_ylabel('Position (µm)', fontsize=10, color='white')  
+        ax.set_title(f'{channel["name"]} Channel', fontsize=12, color='white')  
+        
+        ax.axhline(0, color='white', linestyle='--', alpha=0.7, linewidth=0.8)
+        
+        ax.grid(True, linestyle=':', alpha=0.2, color='white')
+        ax.tick_params(colors='white', labelsize=8)  
+        
+        if ax != axes[-1]:
+            ax.set_xticklabels([])
+        else:
+            ax.set_xlabel('Cell Index', fontsize=10, color='white')
+    
+        cbar = plt.colorbar(lc, cax=cax)
+        cbar.ax.tick_params(labelsize=6)
+        cbar.ax.yaxis.set_tick_params(color='white', size=3) 
+        plt.setp(cbar.ax.get_yticklabels(), color='white', fontsize=6)
+        cax.set_facecolor('black')
+    
+    plt.subplots_adjust(hspace=0.15)  
     plt.show()
 
 

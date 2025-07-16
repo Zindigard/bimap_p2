@@ -1,0 +1,136 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from pathlib import Path
+from PIL import Image
+from scipy import ndimage
+import tifffile
+import os
+
+base_dir = Path(r"C:\Users\zindi\PycharmProjects\P2")
+masks_path = base_dir / "Evaluations" / "SAM" / "WT_NADA_RADA_HADA_NHS_40min_ROI1_SIM_masks.npy"
+binary_path = base_dir / "Evaluations" / "SAM" / "WT_NADA_RADA_HADA_NHS_40min_ROI1_SIM_binary.tif"
+image_path = base_dir / "test_brightness" / "WT_NADA_RADA_HADA_NHS_40min_ROI1_SIM.tif"
+
+output_dir = base_dir / "fixed_mask"
+output_dir.mkdir(parents=True, exist_ok=True)
+
+label_mask = np.load(masks_path)
+print(f"Masks array shape: {label_mask.shape}")
+
+binary_img = np.array(Image.open(binary_path))
+binary_mask = binary_img > 0
+
+label_mask[~binary_mask] = 0
+
+original_image = tifffile.imread(image_path)
+print(f"Original image shape: {original_image.shape}")
+
+if original_image.shape[0] == 3: 
+    original_image = np.moveaxis(original_image, 0, -1)  
+print(f"Fixed image shape: {original_image.shape}")
+
+if original_image.dtype == np.uint16:
+    original_image = original_image.astype(np.float32) / 65535.0
+elif original_image.dtype == np.uint8:
+    original_image = original_image.astype(np.float32) / 255.0
+else:
+    original_image = original_image.astype(np.float32) / np.max(original_image)
+
+R = original_image[..., 0]
+G = original_image[..., 1]
+B = original_image[..., 2]
+
+red_threshold = 0.1
+green_threshold = 0.1
+blue_threshold = 0.1
+dead_threshold_rg = 48  
+dead_threshold_blue = 30  
+
+unique_labels = np.unique(label_mask)
+unique_labels = unique_labels[unique_labels != 0]  
+dead_masks = []
+dead_cell_data = []  
+
+print("Starting dead cell detection for all cells...")
+for label_id in unique_labels:
+    cell_mask = (label_mask == label_id)
+    
+    cell_r = R[cell_mask]
+    cell_g = G[cell_mask]
+    cell_b = B[cell_mask]
+    
+    rg_overlap = (cell_r > red_threshold) & (cell_g > green_threshold)
+    rg_percentage = np.mean(rg_overlap) * 100
+    
+    blue_presence = (cell_b > blue_threshold)
+    blue_percentage = np.mean(blue_presence) * 100
+    
+    if (rg_percentage > dead_threshold_rg) and (blue_percentage < dead_threshold_blue):
+        dead_masks.append(label_id)
+        dead_cell_data.append((label_id, rg_percentage))
+
+print(f"Found {len(dead_masks)} dead cells out of {len(unique_labels)} total cells")
+
+dead_cell_ids_path = output_dir / 'dead_cell_ids.txt'
+with open(dead_cell_ids_path, 'w') as f:
+    f.write("Cell ID\tRG Overlap (%)\n") 
+    for cell_id, rg_perc in dead_cell_data:
+        f.write(f"{cell_id}\t{rg_perc:.1f}\n")
+print(f"Saved dead cell IDs and RG percentages to: {dead_cell_ids_path}")
+
+cleaned_label_mask = label_mask.copy()
+
+dead_cell_mask = np.isin(cleaned_label_mask, dead_masks)
+
+cleaned_label_mask[dead_cell_mask] = 0
+
+cleaned_mask_path = output_dir / 'WT_NADA_RADA_HADA_NHS_40min_ROI1_SIM_masks_cleaned.npy'
+np.save(cleaned_mask_path, cleaned_label_mask)
+print(f"Saved cleaned mask to: {cleaned_mask_path}")
+
+print("Creating visualization...")
+fig, ax = plt.subplots(figsize=(12, 10))
+
+ax.imshow(original_image)
+
+live_mask = np.isin(label_mask, unique_labels) & ~np.isin(label_mask, dead_masks)
+dead_mask = np.isin(label_mask, dead_masks)
+
+live_overlay = np.zeros((*label_mask.shape, 4), dtype=np.float32)
+live_overlay[..., 1] = 0.7 * live_mask  
+live_overlay[..., 3] = 0.4 * live_mask  
+
+dead_overlay = np.zeros((*label_mask.shape, 4), dtype=np.float32)
+dead_overlay[..., 0] = 0.9 * dead_mask  
+dead_overlay[..., 3] = 0.6 * dead_mask  
+
+# Add overlays
+ax.imshow(live_overlay, interpolation='nearest')
+ax.imshow(dead_overlay, interpolation='nearest')
+
+for cell_id, _ in dead_cell_data:
+    mask = label_mask == cell_id
+    centroid = ndimage.center_of_mass(mask)
+    y, x = centroid
+    
+    ax.text(
+        x, y, str(cell_id), 
+        fontsize=8,
+        color='white',
+        weight='bold',
+        ha='center',
+        va='center',
+        bbox=dict(
+            boxstyle='round,pad=0.2',
+            facecolor=(0.7, 0, 0, 0.8),  
+            edgecolor='none'
+        )
+    )
+
+ax.axis('off')
+ax.set_title(f'Cell Analysis: Live (Green) vs Dead (Red)\n{len(dead_masks)} Dead Cells Identified')
+
+plt.tight_layout()
+plt.show()
+
+print("Analysis complete!")
