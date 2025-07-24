@@ -1,22 +1,16 @@
 import numpy as np
 import os
-
-os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
-from cellpose import models, core, io, plot
+from cellpose import models, core, io, utils
 from pathlib import Path
-from cellpose import utils
 import matplotlib.pyplot as plt
 from natsort import natsorted
 from skimage.io import imsave
 from skimage.morphology import remove_small_objects, binary_closing
 from skimage.segmentation import clear_border
 
-
 def post_process_masks(masks):
     """Clean up segmentation masks"""
-
     masks = masks.astype(np.int32)
-
     cleaned_masks = np.zeros_like(masks)
     max_label = masks.max()
 
@@ -31,16 +25,8 @@ def post_process_masks(masks):
 
     return cleaned_masks
 
-
-def setup_paths():
-    image_dir = Path(r"C:\Users\zindi\PycharmProjects\P2\test_data")
-    output_dir = Path(r"C:\Users\zindi\PycharmProjects\P2\Evaluations\SAM")
-    brightness_dir = Path(r"C:\Users\zindi\PycharmProjects\P2\train_brightness")
-    output_dir.mkdir(parents=True, exist_ok=True)
-    return image_dir, output_dir, brightness_dir
-
-
 def list_image_files(directory: Path, extension=".tif"):
+    """Get image files"""
     files = natsorted([f for f in directory.glob(f"*{extension}")
                        if "_masks" not in f.name and "_flows" not in f.name])
     if not files:
@@ -51,8 +37,8 @@ def list_image_files(directory: Path, extension=".tif"):
         print(f.name)
     return files
 
-
 def prepare_image(file: Path):
+    """Normalize and transpose image"""
     img = io.imread(file)
     img_rgb = np.transpose(img, (1, 2, 0)) if img.ndim == 3 else img
     if img_rgb.dtype == np.uint16:
@@ -61,8 +47,8 @@ def prepare_image(file: Path):
         img_rg1 = img_rgb.astype(np.uint8)
     return img_rg1
 
-
 def select_channels(img_rg1, channels=['0','1','2']):
+    """Prepare image for segmentation"""
     selected_indices = []
     for c in channels:
         if c == 'None':
@@ -80,29 +66,29 @@ def select_channels(img_rg1, channels=['0','1','2']):
     
     return composite[..., np.newaxis]
 
-
 def run_segmentation(model, img_selected_channels):
+    """Run model inference"""
     print("Running Cellpose segmentation...")
     masks, flows, styles = model.eval( 
         img_selected_channels,
         batch_size=8,
         diameter=None,
-        flow_threshold=0.6,
-        cellprob_threshold=-0.5,
+        flow_threshold=0.7,
+        cellprob_threshold=-0.6,
         min_size=15,
-        stitch_threshold=0.0,  # Don't stitch cells
+        resample=True,
     )
     return masks, flows, styles
 
-
 def save_binary_mask(masks, path):
+    """Save mask for later processing"""
     binary_mask = (masks > 0).astype(np.uint8) * 255
     io.imsave(path, binary_mask)
     print(f"Saved binary mask to: {path}")
     return binary_mask
 
-
 def save_outlined_image(img_rg1, masks, path):
+    """Save outlines for visualization"""
     outlines = utils.outlines_list(masks)
     plt.figure(figsize=(10, 10))
     plt.imshow(img_rg1)
@@ -114,9 +100,8 @@ def save_outlined_image(img_rg1, masks, path):
     print(f"Saved outlined mask to: {path}")
     return outlines
 
-
 def visualize_results(img_selected_channels, masks, flows, binary_mask, outlines, vis_img):
-
+    """Visualize segmentation results"""
     plt.figure(figsize=(10, 10))
     plt.imshow(binary_mask, cmap='gray')
     plt.title('Binary Mask')
@@ -131,8 +116,8 @@ def visualize_results(img_selected_channels, masks, flows, binary_mask, outlines
     plt.axis('off')
     plt.show()
 
-
 def load_visualization_image(img_rg1, brightness_dir, file):
+    """Load image for visualization"""
     brightness_file = brightness_dir / file.name
     vis_img = None
     if brightness_file.exists():
@@ -144,8 +129,8 @@ def load_visualization_image(img_rg1, brightness_dir, file):
         vis_img = img_rg1
     return vis_img
 
-
 def process_image(file, model, output_dir, brightness_dir):
+    """Process a single image"""
     original_name = file.stem
     outlines_file_path = output_dir / f"{original_name}_outlined.tif"
     mask_file_path = output_dir / f"{original_name}_binary.tif"
@@ -176,20 +161,25 @@ def process_image(file, model, output_dir, brightness_dir):
     np.save(npy_save_path, masks)
     print(f"Masks saved to: {npy_save_path}")
 
-
-def image_segmentation():
-    io.logger_setup()
-    model = models.CellposeModel(gpu=False)
-    dir_path, output_dir, brightness_path = setup_paths()
-    files = list_image_files(dir_path)
-
+def main():
+    """Main function with all path configurations"""
+    base_dir = Path(r"C:\Users\zindi\PycharmProjects\P2")
+    image_dir = base_dir / "test_data"
+    output_dir = base_dir / "Evaluations" / "SAM"
+    brightness_dir = base_dir / "train_brightness"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    
+    use_gpu = core.use_gpu()
+    print(f"Using GPU: {use_gpu}")
+    model = models.CellposeModel(gpu=use_gpu)
+    
+    files = list_image_files(image_dir)
     for file in files:
-        process_image(file, model, output_dir, brightness_path)
-
+        process_image(file, model, output_dir, brightness_dir)
 
 if __name__ == "__main__":
-    image_segmentation()
-
+    main()
 
 
 

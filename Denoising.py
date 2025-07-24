@@ -12,14 +12,7 @@ from typing import Tuple, Dict, List
 
 
 def load_image(file_path: Path) -> np.ndarray:
-    """Load and normalize image to float32 [0,1] range.
-
-    Args:
-        file_path: Path to the image file
-
-    Returns:
-        Normalized float32 image in [0,1] range with shape (H,W,3)
-    """
+    """Load and normalize image to float32 [0,1] range."""
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         img = io.imread(file_path)
@@ -46,18 +39,10 @@ def load_image(file_path: Path) -> np.ndarray:
 
 
 def adaptive_denoise_channel(channel: np.ndarray, sigma: float = 0.1) -> np.ndarray:
-    """Enhanced denoising with adaptive parameters for single channel.
-
-    Args:
-        channel: Single channel image in [0,1] range
-        sigma: Estimated noise level
-
-    Returns:
-        Denoised channel in original range
-    """
+    """Enhanced denoising with adaptive parameters for single channel."""
     channel_norm = (channel - channel.mean()) / (channel.std() + 1e-8)
 
-    # BM3D denoising with adaptive parameters
+    # adaptive parameters
     denoised = bm3d.bm3d(
         channel_norm,
         sigma_psd=max(sigma, 0.05),
@@ -71,15 +56,7 @@ def adaptive_denoise_channel(channel: np.ndarray, sigma: float = 0.1) -> np.ndar
 
 
 def enhanced_denoise_rgb(img: np.ndarray, sigma: float = 0.1) -> np.ndarray:
-    """Improved multi-channel denoising with color preservation.
-
-    Args:
-        img: RGB image in [0,1] range
-        sigma: Estimated noise level
-
-    Returns:
-        Denoised image in [0,1] range
-    """
+    """Improved multi-channel denoising with color preservation."""
     denoised_channels = []
 
     for c in range(3):
@@ -101,15 +78,7 @@ def enhanced_denoise_rgb(img: np.ndarray, sigma: float = 0.1) -> np.ndarray:
 
 
 def calculate_quality_metrics(original: np.ndarray, denoised: np.ndarray) -> Dict:
-    """Calculate comprehensive quality metrics.
-
-    Args:
-        original: Original image in [0,1] range
-        denoised: Denoised image in [0,1] range
-
-    Returns:
-        Dictionary of quality metrics
-    """
+    """Calculate comprehensive quality metrics."""
     metrics = {}
     data_range = 1.0
 
@@ -136,22 +105,14 @@ def calculate_quality_metrics(original: np.ndarray, denoised: np.ndarray) -> Dic
 
 
 def visualize_comparison(original: np.ndarray, denoised: np.ndarray, metrics: Dict):
-    """Simplified visualization focusing on absolute difference.
-    
-    Args:
-        original: Original image in [0,1] range
-        denoised: Denoised image in [0,1] range
-        metrics: Dictionary of quality metrics
-    """
+    """Simplified visualization focusing on absolute difference. """
     fig = plt.figure(figsize=(18, 6))
     
-    # Original image
     ax1 = plt.subplot(1, 3, 1)
     ax1.imshow(original)
     ax1.set_title(f"Original Image\nRange: [{original.min():.2f}, {original.max():.2f}]")
     ax1.axis('off')
     
-    # Denoised image
     ax2 = plt.subplot(1, 3, 2)
     ax2.imshow(denoised)
     ax2.set_title(
@@ -162,10 +123,9 @@ def visualize_comparison(original: np.ndarray, denoised: np.ndarray, metrics: Di
     )
     ax2.axis('off')
     
-    # Absolute difference with enhanced visualization
     difference = np.abs(original - denoised)
     ax3 = plt.subplot(1, 3, 3)
-    im = ax3.imshow(difference, cmap='inferno', vmin=0, vmax=0.3)  # Clip at 0.3 for better visualization
+    im = ax3.imshow(difference, cmap='inferno', vmin=0, vmax=0.3)  
     plt.colorbar(im, ax=ax3, fraction=0.046, pad=0.04)
     ax3.set_title(f"Absolute Difference\nMax: {difference.max():.4f}, Mean: {difference.mean():.4f}")
     ax3.axis('off')
@@ -175,13 +135,7 @@ def visualize_comparison(original: np.ndarray, denoised: np.ndarray, metrics: Di
 
 
 def save_metrics_to_txt(metrics: Dict, file_path: Path, mode: str = 'a'):
-    """Save metrics dictionary to a text file in a readable format.
-
-    Args:
-        metrics: Dictionary containing quality metrics
-        file_path: Path to the output text file
-        mode: File write mode ('w' for write, 'a' for append)
-    """
+    """Save metrics dictionary to a text file in a readable format."""
     with open(file_path, mode) as f:
         f.write("\n=== Image Metrics ===\n")
         for key, value in metrics.items():
@@ -193,12 +147,7 @@ def save_metrics_to_txt(metrics: Dict, file_path: Path, mode: str = 'a'):
 
 
 def save_summary_to_txt(results: List[Dict], file_path: Path):
-    """Save aggregated statistics to a text file.
-
-    Args:
-        results: List of metrics dictionaries from all processed images
-        file_path: Path to the output text file
-    """
+    """Save aggregated statistics to a text file."""
     if not results:
         return
 
@@ -231,17 +180,7 @@ def save_summary_to_txt(results: List[Dict], file_path: Path):
 
 def process_single_image(file_path: Path, output_dir: Path, sigma: float = 0.1,
                          overwrite: bool = False) -> Tuple[bool, Dict]:
-    """Complete processing pipeline with enhanced metrics.
-
-    Args:
-        file_path: Path to input image
-        output_dir: Directory to save results
-        sigma: Noise level estimate
-        overwrite: Whether to overwrite existing files
-
-    Returns:
-        Tuple of (success_flag, metrics_dict)
-    """
+    """Complete processing pipeline with enhanced metrics."""
     output_path = output_dir / f"{file_path.stem}_denoised.tif"
     metrics_file = output_dir / "denoising_metrics.txt"
 
@@ -261,7 +200,6 @@ def process_single_image(file_path: Path, output_dir: Path, sigma: float = 0.1,
         print(f"- MSE: {metrics['mse']:.6f}")
         print(f"- NCC: {metrics['ncc']:.4f}")
 
-        # Save denoised image
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             if img.dtype == np.uint16:
@@ -270,7 +208,7 @@ def process_single_image(file_path: Path, output_dir: Path, sigma: float = 0.1,
                 io.imsave(output_path, (denoised * 255).astype(np.uint8))
 
         print(f"Saved: {output_path}")
-        save_metrics_to_txt(metrics, metrics_file)  # Save metrics to TXT
+        save_metrics_to_txt(metrics, metrics_file)  # Save  to TXT
 
         visualize_comparison(img, denoised, metrics)
 
@@ -282,14 +220,7 @@ def process_single_image(file_path: Path, output_dir: Path, sigma: float = 0.1,
 
 
 def batch_process(input_dir: str, output_dir: str, sigma: float = 0.1, overwrite: bool = False):
-    """Batch process with comprehensive reporting and metrics saving.
-
-    Args:
-        input_dir: Input directory path
-        output_dir: Output directory path
-        sigma: Noise level estimate
-        overwrite: Whether to overwrite existing files
-    """
+    """Batch process with  reporting and metrics saving. """
     input_dir = Path(input_dir)
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -312,7 +243,7 @@ def batch_process(input_dir: str, output_dir: str, sigma: float = 0.1, overwrite
             results.append(metrics)
 
     if results:
-        save_summary_to_txt(results, output_dir / "denoising_metrics.txt")  # Save final summary
+        save_summary_to_txt(results, output_dir / "denoising_metrics.txt") 
         print(f"\nAll metrics saved to: {output_dir / 'denoising_metrics.txt'}")
 
         print("\n\n=== Final Summary ===")
@@ -355,11 +286,9 @@ def batch_process(input_dir: str, output_dir: str, sigma: float = 0.1, overwrite
 
 
 if __name__ == "__main__":
-    # Configuration
     input_dir = r"C:\Users\zindi\PycharmProjects\P2\test_data"
     output_dir = r"C:\Users\zindi\PycharmProjects\P2\denoised"
-    sigma = 0.4  # Initial noise level estimate
+    sigma = 0.4  
     overwrite = False
 
-    # Run processing
     batch_process(input_dir, output_dir, sigma, overwrite)

@@ -17,7 +17,6 @@ def parse_czi_metadata(metadata_xml: str, filename: str) -> dict:
         'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     }
 
-    # Extract detailed pixel scaling information
     pixel_sizes = {}
     scaling = root.find(".//Scaling")
     if scaling is not None:
@@ -33,7 +32,6 @@ def parse_czi_metadata(metadata_xml: str, filename: str) -> dict:
         'pixel_size_unit': 'µm'
     })
 
-    # Extract detailed microscope information
     microscope_info = {
         'microscope_model': root.findtext(".//Microscope/System", default="N/A"),
         'objective_model': root.findtext(".//Objective/Manufacturer/Model", default="N/A"),
@@ -45,7 +43,6 @@ def parse_czi_metadata(metadata_xml: str, filename: str) -> dict:
     }
     metadata.update(microscope_info)
 
-    # Extract acquisition date and time
     acquisition_date = root.findtext(".//AcquisitionDateAndTime", default="N/A")
     if acquisition_date != "N/A":
         try:
@@ -55,24 +52,20 @@ def parse_czi_metadata(metadata_xml: str, filename: str) -> dict:
             pass
     metadata['acquisition_date'] = acquisition_date
 
-    # Extract channel information with laser and exposure details
     channels = []
     for channel in root.findall(".//Channel"):
         try:
-            # Extract exposure time (convert from seconds to milliseconds)
             exposure_time = channel.findtext(".//ExposureTime", default="N/A")
             if exposure_time != "N/A":
                 exposure_time = float(exposure_time) * 1000  # Convert to ms
                 exposure_time = f"{exposure_time:.2f} ms"
             
-            # Extract laser information
             laser_info = {}
             light_source_settings = channel.find(".//LightSourcesSettings/LightSourceSettings")
             if light_source_settings is not None:
                 laser_ref = light_source_settings.find("LightSourceRef")
                 if laser_ref is not None:
                     laser_id = laser_ref.get('Id')
-                    # Find laser details by ID
                     laser = root.find(f".//LightSources/LightSource[@Id='{laser_id}']")
                     if laser is not None:
                         laser_info = {
@@ -143,10 +136,9 @@ def display_czi_images(input_path: str):
                     rgb_composite = np.stack([ch2, ch1, ch0], axis=-1)  # RGB order
                     print('shape', rgb_composite.shape)
 
-                    # Create colored individual channels
-                    ch0_blue = np.stack([ch0, np.zeros_like(ch0), np.zeros_like(ch0)], axis=-1)  # Blue
-                    ch1_green = np.stack([np.zeros_like(ch1), ch1, np.zeros_like(ch1)], axis=-1)  # Green
-                    ch2_red = np.stack([np.zeros_like(ch2), np.zeros_like(ch2), ch2], axis=-1)  # Red
+                    ch0_blue = np.stack([ch0, np.zeros_like(ch0), np.zeros_like(ch0)], axis=-1)  
+                    ch1_green = np.stack([np.zeros_like(ch1), ch1, np.zeros_like(ch1)], axis=-1)  
+                    ch2_red = np.stack([np.zeros_like(ch2), np.zeros_like(ch2), ch2], axis=-1)  
 
                     fig, axes = plt.subplots(2, 2, figsize=(10, 10))
 
@@ -204,7 +196,7 @@ def save_metadata_to_file(metadata_list: list, output_folder: str):
             f.write(f"Acquisition Date: {metadata.get('acquisition_date', 'N/A')}\n")
             f.write(f"Processing Timestamp: {metadata['timestamp']}\n\n")
             
-            # Microscope information
+            
             f.write("Microscope Information:\n")
             f.write(f"- Model: {metadata.get('microscope_model', 'N/A')}\n")
             f.write(f"- Objective: {metadata.get('objective_model', 'N/A')}\n")
@@ -214,13 +206,13 @@ def save_metadata_to_file(metadata_list: list, output_folder: str):
             f.write(f"- Detector: {metadata.get('detector_model', 'N/A')}\n")
             f.write(f"- Illumination Type: {metadata.get('illumination_type', 'N/A')}\n\n")
             
-            # Pixel information
+           
             f.write("Pixel Information:\n")
             f.write(f"- X: {metadata.get('pixel_size_x', 'N/A')}\n")
             f.write(f"- Y: {metadata.get('pixel_size_y', 'N/A')}\n")
             f.write(f"- Z: {metadata.get('pixel_size_z', 'N/A')}\n\n")
             
-            # Channel information
+            
             if 'channels' in metadata:
                 f.write("Channel Details:\n")
                 for i, channel in enumerate(metadata['channels'], 1):
@@ -230,7 +222,7 @@ def save_metadata_to_file(metadata_list: list, output_folder: str):
                     f.write(f"- Emission Wavelength: {channel.get('emission_wavelength', 'N/A')} nm\n")
                     f.write(f"- Exposure Time: {channel.get('exposure_time', 'N/A')}\n")
                     
-                    # Laser information
+                    
                     if channel.get('laser_model') != 'N/A':
                         f.write("- Laser Settings:\n")
                         f.write(f"  Model: {channel.get('laser_model', 'N/A')}\n")
@@ -296,10 +288,7 @@ def plot_tiff_image(tiff_path: str):
 
 
 def find_matching_true_folder(czi_filename: str, true_root_folder: str) -> str:
-    """
-    Find matching folder in the True directory based on filename patterns.
-    Returns the full path if found, None otherwise.
-    """
+    """Find matching folder in the True directory based on filename patterns."""
     base_pattern = czi_filename.split('.')[0]  #  extension
     base_pattern = '_'.join(base_pattern.split('_')[:-1])  #
 
@@ -319,11 +308,10 @@ def process_czi_file(czi_path: str, output_folder: str, metadata_list: list, tru
         metadata_xml = czi.metadata() if callable(czi.metadata) else czi.metadata
         metadata = parse_czi_metadata(metadata_xml, base_name) if isinstance(metadata_xml, (str, bytes)) else {}
 
-        # Convert and save to main output folder (train data)
+        # Convert and save to train data
         tiff_path = convert_czi_to_tiff(czi_path, output_folder, metadata)
         print(f"Saved TIFF: {tiff_path}")
 
-        # If true_root_folder is provided, look for matching folder and save there
         if true_root_folder:
             matching_folder = find_matching_true_folder(base_name, true_root_folder)
             if matching_folder:
@@ -369,16 +357,7 @@ def process_all_czi_files(raw_folder: str, output_folder: str, true_root_folder:
 
 
 def enhance_brightness(image: np.ndarray, brightness_factor: float = 1.2) -> np.ndarray:
-    """
-    Enhance brightness of an image by scaling pixel values.
-
-    Args:
-        image: Input image as numpy array
-        brightness_factor: Factor to multiply pixel values by (>1 = brighter, <1 = darker)
-
-    Returns:
-        Brightness-enhanced image
-    """
+    """Enhance brightness of an image by scaling pixel values. """
     original_dtype = image.dtype
 
     if original_dtype == np.uint16:
@@ -401,18 +380,10 @@ def enhance_brightness(image: np.ndarray, brightness_factor: float = 1.2) -> np.
 
 
 def process_and_save_brightness_tiff(input_path: str, output_path: str, brightness_factor: float = 1.2):
-    """
-    Load a TIFF image, enhance brightness, and save to new location.
-
-    Args:
-        input_path: Path to input TIFF file
-        output_path: Path to save enhanced TIFF file
-        brightness_factor: Brightness multiplier (>1 = brighter, <1 = darker)
-    """
+    """Load a TIFF image, enhance brightness, and save to new location."""
     with tifffile.TiffFile(input_path) as tif:
         image = tif.asarray()
 
-        # List of TIFF tags that should NOT be included in metadata
         exclude_tags = {
             'ImageWidth', 'ImageLength', 'BitsPerSample', 'Compression',
             'PhotometricInterpretation', 'StripOffsets', 'SamplesPerPixel',
@@ -442,14 +413,8 @@ def process_and_save_brightness_tiff(input_path: str, output_path: str, brightne
 
 
 def process_all_tiff_brightness(input_folder: str, output_folder: str, brightness_factor: float = 1.2):
-    """
-    Process all TIFF files in input folder, enhance brightness, and save to output folder.
-
-    Args:
-        input_folder: Folder containing original TIFF files
-        output_folder: Folder to save enhanced TIFF files
-        brightness_factor: Brightness multiplier (>1 = brighter, <1 = darker)
-    """
+    
+    """Process all TIFF files in input folder, enhance brightness, and save to output folder."""
     os.makedirs(output_folder, exist_ok=True)
 
     tiff_files = [f for f in os.listdir(input_folder) if f.lower().endswith(('.tif', '.tiff'))]
@@ -474,7 +439,6 @@ def process_all_tiff_brightness(input_folder: str, output_folder: str, brightnes
 
 
 if __name__ == "__main__":
-    # Define paths
     raw_folder = r"C:\Users\zindi\PycharmProjects\P2\unpacked images\Raw"
     output_folder = r"C:\Users\zindi\PycharmProjects\P2\test_data"
     brightness_folder = r"C:\Users\zindi\PycharmProjects\P2\test_brightness"
@@ -484,12 +448,9 @@ if __name__ == "__main__":
     # Uncomment to display images before processing
     # display_czi_images(raw_folder)
 
-    # Process all CZI files (saves to both train data and matching True folders)
     process_all_czi_files(raw_folder, output_folder, true_root_folder)
 
-    # Create brightness folder if it doesn't exist
     os.makedirs(brightness_folder, exist_ok=True)
 
-    # Process for brightness enhancement
     print("\nEnhancing brightness of TIFF files...")
     process_all_tiff_brightness(output_folder, brightness_folder, brightness_factor=4.5)
