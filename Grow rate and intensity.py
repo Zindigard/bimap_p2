@@ -281,12 +281,30 @@ def show_cell_details(image, masks, cell_num, pixel_size_um, time_interval=40):
         'growth_rate': growth_rate
     }
 
+def save_growth_rates(masks, pixel_size_um, output_path, time_interval=40):
+    """Save growth rates of all cells to a text file"""
+    regions = regionprops(masks)
+    with open(output_path, 'w') as f:
+        f.write("Cell_ID\tGrowth_Rate(µm/min)\tLength(µm)\tWidth(µm)\n")
+        for i, region in enumerate(regions, 1):
+            if region.major_axis_length > 0:  # Only consider valid cells
+                growth_rate = calculate_growth_rate(
+                    region.major_axis_length, 
+                    pixel_size_um, 
+                    time_interval
+                )
+                length_um = region.major_axis_length * pixel_size_um
+                width_um = region.minor_axis_length * pixel_size_um
+                f.write(f"{i}\t{growth_rate:.4f}\t{length_um:.2f}\t{width_um:.2f}\n")
+    print(f"Saved growth rates to: {output_path}")
+
 
 def analyze_image_pair_interactive(mask_path, image_path, pixel_size_um):
     """Interactive analysis function with cell selection"""
     masks, image = load_data(mask_path, image_path)
     regions = regionprops(masks)
-   
+    output_path = mask_path.parent / f"{mask_path.stem.replace('_masks', '_growth_rates.txt')}"
+    save_growth_rates(masks, pixel_size_um, output_path)
 
     fig, ax = plt.subplots(figsize=(10, 10))
     display_img = display_image_with_mask_borders(ax, image, masks)
@@ -307,7 +325,6 @@ def analyze_image_pair_interactive(mask_path, image_path, pixel_size_um):
         if event.inaxes != ax:
             return
         
-        # Get coordinates directly from event
         x = event.xdata
         y = event.ydata
         
@@ -319,22 +336,17 @@ def analyze_image_pair_interactive(mask_path, image_path, pixel_size_um):
             highlighted_contour = None
             fig.canvas.draw_idle()
         
-        # Directly access mask array with proper coordinate conversion
         height, width = masks.shape[:2]
         
         if 0 <= y < height and 0 <= x < width:
-            # Convert to integer indices (truncation is better than rounding)
-            row = int(y)  # Y coordinate = row index
-            col = int(x)  # X coordinate = column index
+            row = int(y)  
+            col = int(x)  
             
-            # Get cell number directly from mask array
             cell_num = masks[row, col]
             
-            # Skip background (0)
             if cell_num > 0:
                 print(f"Selected Cell: {cell_num}")
                 
-                # Highlight selected cell
                 mask = (masks == cell_num).astype(np.uint8)
                 contours = find_contours(mask, 0.5)
                 if contours:
@@ -345,11 +357,9 @@ def analyze_image_pair_interactive(mask_path, image_path, pixel_size_um):
                     )[0]
                     fig.canvas.draw_idle()
                 
-                # Show cell details
                 show_cell_details(image, masks, cell_num, pixel_size_um)
                 return
         
-        # If we get here, no cell was selected
         fig.canvas.draw_idle()
 
     fig.canvas.mpl_connect('button_press_event', on_click)
@@ -538,7 +548,6 @@ def plot_all_channels_intensity_profiles(masks, image, pixel_size_um):
 
 
 def main():
-    """Main program entry point"""
     parser = argparse.ArgumentParser(description='Interactive cell analysis')
     parser.add_argument('--pipeline', action='store_true',
                         help='Run in pipeline mode (processes only first image)')
