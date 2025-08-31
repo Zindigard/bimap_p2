@@ -1,0 +1,287 @@
+import os
+import numpy as np
+import pandas as pd
+from pathlib import Path
+from skimage import io
+from skimage.metrics import peak_signal_noise_ratio, structural_similarity
+from n2v.models import N2V, N2VConfig
+import warnings
+from typing import List, Dict
+
+def normalize(x: np.ndarray) -> np.ndarray:
+    x = x.astype(np.float32)
+    mn, mx = float(x.min()), float(x.max())
+    return np.zeros_like(x, np.float32) if mx <= mn else (x - mn) / (mx - mn)
+
+def merge_channels(channels: list[np.ndarray]) -> np.ndarray:
+    """
+    Merge multiple 2D channels into a single 2D image by appending them along the width dimension.
+    Returns a single merged image.
+    """
+    
+    heights = [ch.shape[0] for ch in channels]
+    if len(set(heights)) > 1:
+        min_height = min(heights)
+        resized_channels = []
+        for ch in channels:
+            if ch.shape[0] != min_height:
+                from skimage.transform import resize
+                ch = resize(ch, (min_height, ch.shape[1]), preserve_range=True)
+            resized_channels.append(ch)
+        channels = resized_channels
+    
+    # Concatenate along width
+    merged = np.concatenate(channels, axis=1)
+    return merged
+
+def split_merged_image(merged: np.ndarray, original_channels: list[np.ndarray]) -> list[np.ndarray]:
+    """
+    Split a merged image back into individual channels based on original channel widths.
+    """
+    split_channels = []
+    current_pos = 0
+    
+    for ch in original_channels:
+        width = ch.shape[1]
+        split_ch = merged[:, current_pos:current_pos + width]
+        split_channels.append(split_ch)
+        current_pos += width
+    
+    return split_channels
+
+def train_n2v_on_merged(merged_img: np.ndarray, model_name: str, config_params: Dict,
+                        basedir: str | Path) -> np.ndarray:
+    """
+    Train Noise2Void on a merged image.
+    Returns denoised float32 (Y,X) in [0,1]
+    """
+    os.makedirs(basedir, exist_ok=True)
+
+    rng = np.random.default_rng(42)
+    H, W = merged_img.shape
+    ph, pw = config_params['patch_size']
+    patches = []
+    for _ in range(config_params['n_patches']):
+        top  = rng.integers(0, max(1, H - ph))
+        left = rng.integers(0, max(1, W - pw))
+        patches.append(merged_img[top:top+ph, left:left+pw][..., None])
+    patches = np.stack(patches).astype(np.float32)  # (N, ph, pw, 1)
+
+    n_val = int(len(patches) * config_params['val_split'])
+    val_X, tr_X = patches[:n_val], patches[n_val:]
+
+    cfg = N2VConfig(
+        X=patches, axes='YXC',
+        unet_kern_size=3,
+        train_steps_per_epoch=config_params['steps_per_epoch'],
+        train_epochs=config_params['train_epochs'], train_loss='mse',
+        batch_norm=True, train_batch_size=config_params['batch_size'],
+        n2v_perc_pix=0.198, n2v_patch_shape=config_params['patch_size'],
+        train_learning_rate=config_params['learning_rate'],
+        train_reduce_lr=config_params['reduce_lr']
+    )
+    n2v = N2V(config=cfg, name=model_name, basedir=str(basedir))
+    n2v.train(tr_X, val_X, epochs=config_params['train_epochs'], 
+              steps_per_epoch=config_params['steps_per_epoch'])
+
+    # Pad the image to be a multiple of 4 for prediction
+    H, W = merged_img.shape
+    m = 4
+    Hn = ((H + m - 1) // m) * m
+    Wn = ((W + m - 1) // m) * m
+    pad_y = Hn - H
+    pad_x = Wn - W
+    top = pad_y // 2
+    bottom = pad_y - top
+    left = pad_x // 2
+    right = pad_x - left
+    
+    if pad_y or pad_x:
+        pad_img = np.pad(merged_img, ((top, bottom), (left, right)), mode='reflect')
+        crop = (slice(top, top + H), slice(left, left + W))
+    else:
+        pad_img = merged_img
+        crop = (slice(0, H), slice(0, W))
+
+    pred_full = n2v.predict(pad_img, axes='YX').astype(np.float32)
+    pred = pred_full[crop]
+    return normalize(pred)
+
+def calculate_quality_metrics(original: np.ndarray, denoised: np.ndarray) -> Dict:
+    """Calculate comprehensive quality metrics for a single channel."""
+    metrics = {}
+    data_range = 1.0
+
+    metrics['mse'] = np.mean((original - denoised) ** 2)
+    metrics['psnr'] = peak_signal_noise_ratio(original, denoised, data_range=data_range)
+    metrics['ssim'] = structural_similarity(original, denoised, data_range=data_range)
+    
+    # Normalized cross-correlation
+    metrics['ncc'] = np.corrcoef(original.ravel(), denoised.ravel())[0, 1]
+    
+    return metrics
+
+def save_metrics_to_txt(metrics: Dict, file_path: Path, mode: str = 'a'):
+    """Save metrics dictionary to a text file in a readable format."""
+    with open(file_path, mode) as f:
+        f.write("\n=== Image Metrics ===\n")
+        for key, value in metrics.items():
+            if isinstance(value, list):
+                f.write(f"{key}: {[f'{x:.4f}' for x in value]}\n")
+            else:
+                f.write(f"{key}: {value:.4f}\n")
+        f.write("\n")
+
+def save_summary_to_txt(results: List[Dict], file_path: Path):
+    """Save aggregated statistics to a text file."""
+    if not results:
+        return
+
+    ssim_values = [x['ssim'] for x in results]
+    psnr_values = [x['psnr'] for x in results]
+    mse_values = [x['mse'] for x in results]
+
+    with open(file_path, 'w') as f:
+        f.write("=== Final Summary Statistics ===\n\n")
+        f.write(f"Total Images Processed: {len(results)}\n\n")
+
+        f.write("SSIM Statistics:\n")
+        f.write(f"- Average: {np.mean(ssim_values):.4f}\n")
+        f.write(f"- Median: {np.median(ssim_values):.4f}\n")
+        f.write(f"- Range: [{np.min(ssim_values):.4f}, {np.max(ssim_values):.4f}]\n")
+        f.write(f"- Std Dev: {np.std(ssim_values):.4f}\n\n")
+
+        f.write("PSNR Statistics:\n")
+        f.write(f"- Average: {np.mean(psnr_values):.2f} dB\n")
+        f.write(f"- Median: {np.median(psnr_values):.2f} dB\n")
+        f.write(f"- Range: [{np.min(psnr_values):.2f}, {np.max(psnr_values):.2f}] dB\n")
+        f.write(f"- Std Dev: {np.std(psnr_values):.2f}\n\n")
+
+        f.write("MSE Statistics:\n")
+        f.write(f"- Average: {np.mean(mse_values):.6f}\n")
+        f.write(f"- Median: {np.median(mse_values):.6f}\n")
+        f.write(f"- Range: [{np.min(mse_values):.6f}, {np.max(mse_values):.6f}]\n")
+        f.write(f"- Std Dev: {np.std(mse_values):.6f}\n")
+
+def process_single_image_n2v(image_array: np.ndarray, config_params: Dict,
+                            model_name: str = "N2V_merged") -> tuple:
+    """
+    Process a single image with shape (X, Y, C) using merged channel N2V denoising.
+    Returns:
+    tuple: (denoised_channels, metrics)
+        denoised_channels: List of denoised channels
+        metrics: List of dictionaries with PSNR and SSIM for each channel
+    """
+    # Convert from (X, Y, C) to (C, Y, X)
+    if image_array.ndim != 3:
+        raise ValueError(f"Expected 3D array (X, Y, C), got {image_array.shape}")
+    
+    image_array = np.moveaxis(image_array, -1, 0)
+    
+    channels = [normalize(image_array[i]) for i in range(image_array.shape[0])]
+    channel_names = [f'Channel_{i}' for i in range(image_array.shape[0])]
+    
+    merged = merge_channels(channels)
+    
+    # Train N2V on merged image
+    print(f"\n[TRAIN N2V on merged channels]")
+    denoised_merged = train_n2v_on_merged(merged, model_name, config_params, config_params['base_model_dir'])
+    
+    denoised_channels = split_merged_image(denoised_merged, channels)
+    
+    # Calculate comprehensive metrics for each channel
+    metrics = []
+    all_channel_metrics = []
+    
+    for ch_name, raw_ch, den_ch in zip(channel_names, channels, denoised_channels):
+        channel_metrics = calculate_quality_metrics(raw_ch, den_ch)
+        channel_metrics['Channel'] = ch_name
+        metrics.append(channel_metrics)
+        all_channel_metrics.append(channel_metrics)
+    
+    # Calculate overall image metrics (average across channels)
+    image_metrics = {
+        'psnr': np.mean([m['psnr'] for m in all_channel_metrics]),
+        'ssim': np.mean([m['ssim'] for m in all_channel_metrics]),
+        'mse': np.mean([m['mse'] for m in all_channel_metrics]),
+        'ncc': np.mean([m['ncc'] for m in all_channel_metrics]),
+        'ssim_channels': [m['ssim'] for m in all_channel_metrics]
+    }
+    
+    return denoised_channels, metrics, image_metrics
+
+def process_directory(input_dir: str, output_dir: str, config_params: Dict, model_name: str = "N2V_merged"):
+    """
+    Process all TIFF images in the input directory using merged channel N2V denoising.
+    """
+    input_path = Path(input_dir)
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    
+    # Get all TIFF files in the input directory
+    tiff_files = list(input_path.glob("*.tif")) + list(input_path.glob("*.tiff"))
+    
+    if not tiff_files:
+        print(f"No TIFF files found in {input_dir}")
+        return
+    
+    all_metrics = []
+    image_level_metrics = []
+    
+    for file_path in tiff_files:
+        try:
+            print(f"\nProcessing {file_path.name}...")
+            image_array = io.imread(file_path)
+            
+            # Process with N2V
+            denoised_channels, channel_metrics, image_metrics = process_single_image_n2v(
+                image_array, 
+                config_params,
+                model_name=f"{model_name}_{file_path.stem}"
+            )
+            
+            for metric in channel_metrics:
+                metric['Filename'] = file_path.name
+            all_metrics.extend(channel_metrics)
+            
+            image_metrics['Filename'] = file_path.name
+            image_level_metrics.append(image_metrics)
+            
+            # Save individual image metrics to text file
+            save_metrics_to_txt(image_metrics, output_path / "denoising_metrics.txt")
+            
+            print(f"Completed {file_path.name}")
+            
+        except Exception as e:
+            print(f"Error processing {file_path.name}: {str(e)}")
+            import traceback
+            traceback.print_exc()
+    
+    # Save all channel metrics to txt
+    if all_metrics:
+        metrics_df = pd.DataFrame(all_metrics)
+        metrics_df = metrics_df[['Filename', 'Channel', 'psnr', 'ssim', 'mse', 'ncc']]
+        metrics_df.to_csv(output_path / "denoising_metrics.csv", index=False)
+        print(f"\nSaved all channel metrics to {output_path}/denoising_metrics.csv")
+    
+    if image_level_metrics:
+        save_summary_to_txt(image_level_metrics, output_path / "denoising_summary.txt")
+        print(f"Saved summary to {output_path}/denoising_summary.txt")
+
+if __name__ == "__main__":
+    params = {
+        'patch_size': (64, 64),
+        'n_patches': 512,
+        'val_split': 0.10,
+        'train_epochs': 20,
+        'steps_per_epoch': 100,
+        'batch_size': 16,
+        'learning_rate': 1e-3,
+        'reduce_lr': {'patience': 3, 'factor': 0.5},
+        'base_model_dir': './models'
+    }
+    
+    input_directory = r"C:\Users\zindi\PycharmProjects\P2\test_data"
+    output_directory = r"C:\Users\zindi\PycharmProjects\P2\denoised_results"
+    
+    process_directory(input_directory, output_directory, params)
