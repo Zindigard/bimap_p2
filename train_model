@@ -1,0 +1,305 @@
+import numpy as np
+import os
+from cellpose import models, core, io, train, transforms
+from pathlib import Path
+import matplotlib.pyplot as plt
+import torch
+from scipy.ndimage import rotate, zoom
+import random
+from cellpose import metrics
+from tqdm import tqdm
+
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
+io.logger_setup()
+
+def get_project_root():
+    """
+    Get the root directory where scripts are located.
+    
+    Returns:
+        str: Absolute path to the directory containing this script
+    """
+    return os.path.dirname(os.path.abspath(__file__))
+
+def setup_folders():
+    """
+    Create necessary folder structure for Cellpose training pipeline.
+    
+    Returns:
+        dict: Dictionary with paths to all required folders
+    """
+    root_dir = get_project_root()
+    
+    folders = {
+        'train_dir': os.path.join(root_dir, "train_data"),
+        'test_dir': os.path.join(root_dir, "validation"),
+        'save_path': os.path.join(root_dir, "training_results")
+    }
+    
+    for folder in folders.values():
+        os.makedirs(folder, exist_ok=True)
+        print(f"Ensured folder exists: {folder}")
+    
+    return folders
+
+def augment_dataset(images, labels, num_augmentations=5):
+    """
+    Generate augmented training data with geometric and elastic transformations.
+    
+    Args:
+        images (list): List of training images
+        labels (list): List of corresponding segmentation masks
+        num_augmentations (int): Number of augmented versions to generate per image
+        
+    Returns:
+        tuple: (augmented_images, augmented_labels) - Expanded training dataset
+        
+    Augmentations Applied:
+        - Random rotations (0-360 degrees)
+        - Random horizontal and vertical flips
+        - Elastic deformations
+        - Random scaling (90-110% of original size)
+    """
+    augmented_images = []
+    augmented_labels = []
+    
+    print(f"Augmenting dataset: generating {num_augmentations} variants per image")
+    
+    for img, lbl in tqdm(zip(images, labels), total=len(images)):
+        augmented_images.append(img)
+        augmented_labels.append(lbl)
+        
+        for _ in range(num_augmentations):
+            # Random rotation
+            angle = random.uniform(0, 360)
+            
+            # Apply rotation to each channel
+            img_rot = np.stack([rotate(channel, angle, reshape=False, order=1, mode='reflect') 
+                                for channel in img], axis=0)
+            lbl_rot = rotate(lbl, angle, reshape=False, order=0, mode='reflect')
+            
+            # Random flipping
+            if random.random() > 0.5:  # Horizontal flip
+                img_rot = img_rot[:, :, ::-1]
+                lbl_rot = lbl_rot[:, ::-1]
+            if random.random() > 0.5:  # Vertical flip
+                img_rot = img_rot[:, ::-1, :]
+                lbl_rot = lbl_rot[::-1, :]
+            
+            # Elastic deformation
+            alpha = random.uniform(8, 16)  # Deformation intensity
+            sigma = random.uniform(3, 6)   # Deformation smoothness
+            coords = transforms.create_identity_field(lbl_rot.shape)
+            coords = transforms.elastic_transform_coords(coords, alpha, sigma)
+            
+            img_aug = np.stack([transforms.apply_transform(coords, channel, order=1) 
+                                for channel in img_rot], axis=0)
+            lbl_aug = transforms.apply_transform(coords, lbl_rot, order=0)
+            
+            scale_factor = random.uniform(0.9, 1.1)
+            if scale_factor != 1.0:
+                img_aug = np.stack([zoom(channel, scale_factor, order=1) 
+                                   for channel in img_aug], axis=0)
+                lbl_aug = zoom(lbl_aug, scale_factor, order=0)
+                
+                h, w = img.shape[1], img.shape[2]
+                new_h, new_w = img_aug.shape[1], img_aug.shape[2]
+                
+                if scale_factor > 1:  # Crop if larger
+                    start_h = (new_h - h) // 2
+                    start_w = (new_w - w) // 2
+                    img_aug = img_aug[:, start_h:start_h+h, start_w:start_w+w]
+                    lbl_aug = lbl_aug[start_h:start_h+h, start_w:start_w+w]
+                else:  # Pad if smaller
+                    pad_h = (h - new_h) // 2
+                    pad_w = (w - new_w) // 2
+                    img_aug = np.pad(img_aug, ((0, 0), (pad_h, h - new_h - pad_h), 
+                                             (pad_w, w - new_w - pad_w)), mode='constant')
+                    lbl_aug = np.pad(lbl_aug, ((pad_h, h - new_h - pad_h), 
+                                             (pad_w, w - new_w - pad_w)), mode='constant')
+            
+            augmented_images.append(img_aug)
+            augmented_labels.append(lbl_aug)
+    
+    print(f"Dataset expanded from {len(images)} to {len(augmented_images)} images")
+    return augmented_images, augmented_labels
+
+def load_and_preprocess_data(train_dir, test_dir):
+    """
+    Load and preprocess training and test data for Cellpose.
+    
+    Args:
+        train_dir (str): Directory containing training images and masks
+        test_dir (str): Directory containing test images and masks
+        
+    Returns:
+        tuple: (train_data, train_labels, test_data, test_labels) - Preprocessed datasets
+        
+    Note:
+        - Masks should have '_mask' in filename (e.g., 'image_mask.tif')
+        - Images are normalized to [0,1] range
+        - Channel order is adjusted to (C, Y, X) format
+    """
+    if not Path(train_dir).exists() or not Path(test_dir).exists():
+        raise FileNotFoundError("Data directories not found")
+    
+    output = io.load_train_test_data(train_dir, test_dir, mask_filter="_mask")
+    train_data, train_labels, _, test_data, test_labels, _ = output
+    
+    def preprocess(imgs):
+        """
+        Preprocess images: normalize and adjust channel order.
+        """
+        processed = []
+        for img in imgs:
+            if img.ndim == 3 and img.shape[-1] == 3:  
+                img = np.transpose(img, (2, 0, 1))
+            elif img.ndim == 2:  # Add channel dimension
+                img = img[np.newaxis, ...]
+            processed.append(img.astype(np.float32) / 255.0)  # Normalize to [0,1]
+        return processed
+    
+    return preprocess(train_data), train_labels, preprocess(test_data), test_labels
+
+def train_model(model, train_data, train_labels, params):
+    """
+    Train Cellpose model with custom parameters and data augmentation.
+    
+    Args:
+        model: Cellpose model instance
+        train_data (list): Training images
+        train_labels (list): Training masks
+        params (dict): Training parameters
+        
+    Returns:
+        tuple: (model_path, train_losses, test_losses) - Training results
+    """
+    return train.train_seg(
+        model.net,
+        train_data=train_data,
+        train_labels=train_labels,
+        n_epochs=params['n_epochs'],
+        learning_rate=params['learning_rate'],
+        weight_decay=params['weight_decay'],
+        batch_size=params['batch_size'],
+        nimg_per_epoch=params['nimg_per_epoch'],
+        model_name=params['model_name'],
+        save_every=params['save_every'],
+        save_each=False
+    )
+
+def evaluate_and_visualize(model, test_data, test_labels):
+    """
+    Evaluate trained model and visualize results.
+    
+    Args:
+        model: Trained Cellpose model
+        test_data (list): Test images for evaluation
+        test_labels (list): Ground truth masks
+        
+    Returns:
+        np.ndarray: Average precision scores
+        
+    Displays:
+        - Side-by-side comparison of images, predictions, and ground truth
+        - Performance metrics
+    """
+    masks = model.eval(test_data, batch_size=4)[0]
+    
+    # Calculate average precision
+    ap = metrics.average_precision(test_labels, masks)[0]
+    print(f'>>> Average precision at IoU threshold 0.5 = {ap[:,0].mean():.3f}')
+    
+    # Create visualization
+    plt.figure(figsize=(12, 8), dpi=150)
+    for k, im in enumerate(test_data):
+        # Original image
+        plt.subplot(3, len(test_data), k+1)
+        if im.shape[0] == 3:  # RGB image
+            plt.imshow(np.transpose(im, (1, 2, 0)))
+        else:  # Grayscale image
+            plt.imshow(im[0], cmap='gray')
+        plt.axis('off')
+        if k == 0: plt.title('Image')
+        
+        # Predicted masks
+        plt.subplot(3, len(test_data), len(test_data) + k+1)
+        plt.imshow(masks[k])
+        plt.axis('off')
+        if k == 0: plt.title('Predicted')
+        
+        # Ground truth
+        plt.subplot(3, len(test_data), 2*len(test_data) + k+1)
+        plt.imshow(test_labels[k])
+        plt.axis('off')
+        if k == 0: plt.title('Ground Truth')
+    
+    plt.tight_layout()
+    plt.savefig('validation_results.png', dpi=300)
+    plt.show()
+    return ap
+
+def main():
+    """
+    Main Cellpose training pipeline with data augmentation and evaluation.
+    """
+    folders = setup_folders()
+    
+    # USER-ADJUSTABLE TRAINING PARAMETERS:
+    params = {
+        'n_epochs': 100,              # Training epochs (increase for better performance)
+        'learning_rate': 1e-5,        # Learning rate (1e-6 to 1e-4)
+        'weight_decay': 0.1,          # Weight decay for regularization
+        'batch_size': 1,              # Batch size (adjust based on GPU memory)
+        'nimg_per_epoch': 8,          # Images per epoch
+        'model_name': "cpsam",        # Model name for saving
+        'save_every': 5               # Save checkpoint every N epochs
+    }
+    
+    num_augmentations = 5             # Number of augmented versions per image
+    
+    print("\nCELLPOSE TRAINING PARAMETERS:")
+    print(f"- Training epochs: {params['n_epochs']}")
+    print(f"- Learning rate: {params['learning_rate']}")
+    print(f"- Batch size: {params['batch_size']}")
+    print(f"- Augmentations per image: {num_augmentations}")
+    print(f"- Model name: {params['model_name']}")
+    print("\nAdjust these parameters in main() function for optimal training")
+    
+    use_GPU = core.use_gpu()
+    print(f"Using GPU: {use_GPU}")
+    
+    # Initialize model with pretrained weights
+    # - 'cyto' for cytoplasm segmentation
+    # - 'nuclei' for nucleus segmentation  
+    # - 'cpsam' for general cell segmentation
+    model = models.CellposeModel(gpu=use_GPU, pretrained_model='cpsam')
+    
+    # Load and preprocess data
+    train_data, train_labels, test_data, test_labels = load_and_preprocess_data(
+        folders['train_dir'], folders['test_dir']
+    )
+    
+    # Apply data augmentation
+    train_data, train_labels = augment_dataset(train_data, train_labels, num_augmentations)
+    
+    # Adjust training parameters based on dataset size
+    params['nimg_per_epoch'] = min(8, len(train_data))
+    
+    # Train model
+    print("Starting training...")
+    model_path, train_losses, test_losses = train_model(model, train_data, train_labels, params)
+    
+    # Reload best model for evaluation
+    model = models.CellposeModel(gpu=use_GPU, pretrained_model=model_path)
+    
+    # Evaluate model
+    print("Evaluating model...")
+    evaluate_and_visualize(model, test_data, test_labels)
+    
+    np.save(folders['save_path'] / 'train_losses.npy', train_losses)
+    np.save(folders['save_path'] / 'test_losses.npy', test_losses)
+    print(f"Training complete. Model saved to: {model_path}")
+
+if __name__ == "__main__":
+    main()
