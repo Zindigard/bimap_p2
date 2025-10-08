@@ -9,10 +9,27 @@ import matplotlib.pyplot as plt
 import warnings
 from scipy import ndimage
 from typing import Tuple, Dict, List
+import os
 
+def get_project_root():
+    """
+    Get the root directory where scripts are located.
+    
+    Returns:
+        str: Absolute path to the directory containing this script
+    """
+    return os.path.dirname(os.path.abspath(__file__))
 
 def load_image(file_path: Path) -> np.ndarray:
-    """Load and normalize image to float32 [0,1] range."""
+    """
+    Load and normalize image to float32 [0,1] range.
+    
+    Args:
+        file_path (Path): Path to image file
+        
+    Returns:
+        np.ndarray: Normalized image in [0,1] range
+    """
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         img = io.imread(file_path)
@@ -37,9 +54,17 @@ def load_image(file_path: Path) -> np.ndarray:
     img = np.clip(img, 0.0, 1.0)
     return img
 
-
 def adaptive_denoise_channel(channel: np.ndarray, sigma: float = 0.1) -> np.ndarray:
-    """Enhanced denoising with adaptive parameters for single channel."""
+    """
+    Enhanced denoising with adaptive parameters for single channel.
+    
+    Args:
+        channel (np.ndarray): Single channel image data
+        sigma (float): Noise standard deviation estimate
+        
+    Returns:
+        np.ndarray: Denoised channel
+    """
     channel_norm = (channel - channel.mean()) / (channel.std() + 1e-8)
 
     # adaptive parameters
@@ -54,9 +79,17 @@ def adaptive_denoise_channel(channel: np.ndarray, sigma: float = 0.1) -> np.ndar
 
     return np.clip(denoised, 0.0, 1.0)
 
-
 def enhanced_denoise_rgb(img: np.ndarray, sigma: float = 0.1) -> np.ndarray:
-    """Improved multi-channel denoising with color preservation."""
+    """
+    Improved multi-channel denoising with color preservation.
+    
+    Args:
+        img (np.ndarray): RGB input image
+        sigma (float): Noise standard deviation estimate
+        
+    Returns:
+        np.ndarray: Denoised RGB image
+    """
     denoised_channels = []
 
     for c in range(3):
@@ -76,9 +109,17 @@ def enhanced_denoise_rgb(img: np.ndarray, sigma: float = 0.1) -> np.ndarray:
 
     return np.clip(denoised_img, 0.0, 1.0)
 
-
 def calculate_quality_metrics(original: np.ndarray, denoised: np.ndarray) -> Dict:
-    """Calculate comprehensive quality metrics."""
+    """
+    Calculate comprehensive quality metrics between original and denoised images.
+    
+    Args:
+        original (np.ndarray): Original image
+        denoised (np.ndarray): Denoised image
+        
+    Returns:
+        dict: Dictionary containing SSIM, PSNR, MSE, and NCC metrics
+    """
     metrics = {}
     data_range = 1.0
 
@@ -103,9 +144,15 @@ def calculate_quality_metrics(original: np.ndarray, denoised: np.ndarray) -> Dic
 
     return metrics
 
-
 def visualize_comparison(original: np.ndarray, denoised: np.ndarray, metrics: Dict):
-    """Simplified visualization focusing on absolute difference. """
+    """
+    Display side-by-side comparison of original vs denoised images with metrics.
+    
+    Args:
+        original (np.ndarray): Original image
+        denoised (np.ndarray): Denoised image  
+        metrics (dict): Quality metrics dictionary
+    """
     fig = plt.figure(figsize=(18, 6))
     
     ax1 = plt.subplot(1, 3, 1)
@@ -133,9 +180,15 @@ def visualize_comparison(original: np.ndarray, denoised: np.ndarray, metrics: Di
     plt.tight_layout()
     plt.show()
 
-
 def save_metrics_to_txt(metrics: Dict, file_path: Path, mode: str = 'a'):
-    """Save metrics dictionary to a text file in a readable format."""
+    """
+    Save metrics dictionary to a text file in readable format.
+    
+    Args:
+        metrics (dict): Metrics dictionary to save
+        file_path (Path): Path to output text file
+        mode (str): File write mode ('a' for append, 'w' for write)
+    """
     with open(file_path, mode) as f:
         f.write("\n=== Image Metrics ===\n")
         for key, value in metrics.items():
@@ -145,9 +198,14 @@ def save_metrics_to_txt(metrics: Dict, file_path: Path, mode: str = 'a'):
                 f.write(f"{key}: {value:.4f}\n")
         f.write("\n")
 
-
 def save_summary_to_txt(results: List[Dict], file_path: Path):
-    """Save aggregated statistics to a text file."""
+    """
+    Save aggregated statistics across all processed images.
+    
+    Args:
+        results (list): List of metric dictionaries
+        file_path (Path): Path to output summary file
+    """
     if not results:
         return
 
@@ -177,10 +235,20 @@ def save_summary_to_txt(results: List[Dict], file_path: Path):
         f.write(f"- Range: [{np.min(mse_values):.6f}, {np.max(mse_values):.6f}]\n")
         f.write(f"- Std Dev: {np.std(mse_values):.6f}\n")
 
-
 def process_single_image(file_path: Path, output_dir: Path, sigma: float = 0.1,
                          overwrite: bool = False) -> Tuple[bool, Dict]:
-    """Complete processing pipeline with enhanced metrics."""
+    """
+    Complete denoising pipeline for a single image with quality assessment.
+    
+    Args:
+        file_path (Path): Path to input image
+        output_dir (Path): Directory for denoised output
+        sigma (float): Noise standard deviation for BM3D denoising
+        overwrite (bool): Whether to overwrite existing files
+        
+    Returns:
+        tuple: (success_flag, metrics_dictionary)
+    """
     output_path = output_dir / f"{file_path.stem}_denoised.tif"
     metrics_file = output_dir / "denoising_metrics.txt"
 
@@ -208,7 +276,7 @@ def process_single_image(file_path: Path, output_dir: Path, sigma: float = 0.1,
                 io.imsave(output_path, (denoised * 255).astype(np.uint8))
 
         print(f"Saved: {output_path}")
-        save_metrics_to_txt(metrics, metrics_file)  # Save  to TXT
+        save_metrics_to_txt(metrics, metrics_file)  # Save to TXT
 
         visualize_comparison(img, denoised, metrics)
 
@@ -218,12 +286,28 @@ def process_single_image(file_path: Path, output_dir: Path, sigma: float = 0.1,
         print(f"Error processing {file_path.name}: {str(e)}")
         return False, {}
 
-
-def batch_process(input_dir: str, output_dir: str, sigma: float = 0.1, overwrite: bool = False):
-    """Batch process with  reporting and metrics saving. """
+def batch_process(input_dir: str = None, output_dir: str = None, sigma: float = 0.1, overwrite: bool = False):
+    """
+    Batch process all images in directory with denoising and quality metrics.
+    
+    Args:
+        input_dir (str): Input directory with images (None for default)
+        output_dir (str): Output directory for denoised images (None for default) 
+        sigma (float): Noise standard deviation parameter for BM3D
+        overwrite (bool): Overwrite existing denoised files
+    """
+    if input_dir is None or output_dir is None:
+        root_dir = get_project_root()
+        if input_dir is None:
+            input_dir = os.path.join(root_dir, "test_data")
+        if output_dir is None:
+            output_dir = os.path.join(root_dir, "denoised")
+    
+    # Create output directory if it doesn't exist
+    os.makedirs(output_dir, exist_ok=True)
+    
     input_dir = Path(input_dir)
     output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
 
     files = natsorted(
         [f for f in input_dir.glob("*.[tT][iI][fF]*") if "_masks" not in f.name and "_flows" not in f.name])
@@ -233,8 +317,7 @@ def batch_process(input_dir: str, output_dir: str, sigma: float = 0.1, overwrite
 
     print(f"\nFound {len(files)} images in {input_dir}")
     print(f"Output directory: {output_dir}")
-    print(f"Parameters: sigma={sigma}, overwrite={overwrite}")
-
+    
     results = []
     for i, file in enumerate(files, 1):
         print(f"\nImage {i}/{len(files)}:")
@@ -246,24 +329,25 @@ def batch_process(input_dir: str, output_dir: str, sigma: float = 0.1, overwrite
         save_summary_to_txt(results, output_dir / "denoising_metrics.txt") 
         print(f"\nAll metrics saved to: {output_dir / 'denoising_metrics.txt'}")
 
-        print("\n\n=== Final Summary ===")
+        # Display final statistics
+        print("\n\n=== FINAL DENOISING SUMMARY ===")
         print(f"Processed {len(results)} images successfully")
 
         ssim_values = [x['ssim'] for x in results]
         psnr_values = [x['psnr'] for x in results]
         mse_values = [x['mse'] for x in results]
 
-        print("\nSSIM Statistics:")
+        print("\nSSIM Statistics (higher is better, max=1.0):")
         print(f"- Average: {np.mean(ssim_values):.4f}")
         print(f"- Median: {np.median(ssim_values):.4f}")
         print(f"- Range: [{np.min(ssim_values):.4f}, {np.max(ssim_values):.4f}]")
-        print(f"- Std Dev: {np.std(ssim_values):.4f}")
 
-        print("\nPSNR Statistics:")
+        print("\nPSNR Statistics (higher is better, >30 dB is good):")
         print(f"- Average: {np.mean(psnr_values):.2f} dB")
         print(f"- Median: {np.median(psnr_values):.2f} dB")
         print(f"- Range: [{np.min(psnr_values):.2f}, {np.max(psnr_values):.2f}] dB")
 
+        # Visualization of results distribution
         plt.figure(figsize=(15, 5))
         plt.subplot(131)
         plt.hist(ssim_values, bins=20, color='skyblue', edgecolor='black')
@@ -284,11 +368,16 @@ def batch_process(input_dir: str, output_dir: str, sigma: float = 0.1, overwrite
         plt.tight_layout()
         plt.show()
 
-
 if __name__ == "__main__":
-    input_dir = r"C:\Users\zindi\PycharmProjects\P2\test_data"
-    output_dir = r"C:\Users\zindi\PycharmProjects\P2\denoised"
-    sigma = 0.4  
+    
+    # Sigma: 
+    # - Lower values (0.1-0.3): Light denoising, preserves details
+    # - Medium values (0.3-0.6): Balanced denoising  
+    # - Higher values (0.6-1.0): Strong denoising, may lose details
+    # Adjust based on image noise level - start with 0.4 and adjust
+    sigma = 0.4
+    
+    # Overwrite existing denoised files
     overwrite = False
 
-    batch_process(input_dir, output_dir, sigma, overwrite)
+    batch_process(sigma=sigma, overwrite=overwrite)

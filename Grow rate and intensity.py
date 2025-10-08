@@ -12,10 +12,30 @@ from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.collections import LineCollection
 from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
 from matplotlib.colors import LinearSegmentedColormap
+from scipy.ndimage import gaussian_filter
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+import os
 
+def get_project_root():
+    """
+    Get the root directory where scripts are located.
+    
+    Returns:
+        str: Absolute path to the directory containing this script
+    """
+    return os.path.dirname(os.path.abspath(__file__))
 
 def read_pixel_size_from_metadata(metadata_folder, image_filename):
-    """Extract the X pixel size (µm) from metadata."""
+    """
+    Extract the X pixel size (µm) from metadata file.
+    
+    Args:
+        metadata_folder (Path): Directory containing metadata files
+        image_filename (str): Name of the image file
+        
+    Returns:
+        float: Pixel size in micrometers or None if not found
+    """
     possible_metadata_files = [
         metadata_folder / "metadata_summary.txt",
         metadata_folder / "metadata.txt",
@@ -56,7 +76,16 @@ def read_pixel_size_from_metadata(metadata_folder, image_filename):
 
 
 def find_matching_files(sam_folder, brightness_folder):
-    """Find matching mask and image file pairs"""
+    """
+    Find matching mask and image file pairs for analysis.
+    
+    Args:
+        sam_folder (Path): Directory containing segmentation masks
+        brightness_folder (Path): Directory containing brightness-enhanced images
+        
+    Returns:
+        list: List of (mask_path, image_path) tuples
+    """
     mask_files = list(sam_folder.glob("*_masks.npy"))
     file_pairs = []
 
@@ -71,7 +100,16 @@ def find_matching_files(sam_folder, brightness_folder):
 
 
 def load_data(mask_path, image_path):
-    """Load mask and image data with proper 16-bit handling and channel order"""
+    """
+    Load mask and image data with proper 16-bit handling and channel order.
+    
+    Args:
+        mask_path (Path): Path to segmentation mask file
+        image_path (Path): Path to corresponding image file
+        
+    Returns:
+        tuple: (masks, image) arrays
+    """
     masks = np.load(mask_path)
     image = tifffile.imread(image_path)
     
@@ -83,7 +121,17 @@ def load_data(mask_path, image_path):
 
 
 def display_image_with_mask_borders(ax, image, masks):
-    """Display image with cell outlines"""
+    """
+    Display image with cell outlines for interactive selection.
+    
+    Args:
+        ax: Matplotlib axes object
+        image (np.ndarray): Input image
+        masks (np.ndarray): Segmentation masks
+        
+    Returns:
+        np.ndarray: Display-ready image
+    """
     if image.dtype == np.uint16:
         display_img = image.astype(np.float32) / 65535.0
     elif image.dtype in [np.float32, np.float64]:
@@ -104,13 +152,35 @@ def display_image_with_mask_borders(ax, image, masks):
 
 
 def calculate_growth_rate(major_length_px, pixel_size_um, time_interval=40):
-    """Calculate growth rate based on major axis length and time interval"""
+    """
+    Calculate growth rate based on major axis length and time interval.
+    
+    Args:
+        major_length_px (float): Major axis length in pixels
+        pixel_size_um (float): Pixel size in micrometers
+        time_interval (float): Time between frames in minutes
+        
+    Returns:
+        float: Growth rate in µm/min
+    """
     half_major_um = (major_length_px / 2) * pixel_size_um
     return half_major_um / time_interval  # µm/min
 
 
 def show_cell_details(image, masks, cell_num, pixel_size_um, time_interval=40):
-    """Show detailed view with optimized layout and consistent plot sizes"""
+    """
+    Display detailed analysis for a single cell including measurements and intensity profiles.
+    
+    Args:
+        image (np.ndarray): Multi-channel image
+        masks (np.ndarray): Segmentation masks
+        cell_num (int): Cell ID to analyze
+        pixel_size_um (float): Pixel size in micrometers
+        time_interval (float): Time interval for growth rate calculation
+        
+    Returns:
+        dict: Cell measurements and analysis results
+    """
     num_channels = 3
     
     fig = plt.figure(figsize=(18, 15), facecolor='black')
@@ -254,8 +324,8 @@ def show_cell_details(image, masks, cell_num, pixel_size_um, time_interval=40):
         plt.setp(plt.getp(cbar.ax.axes, 'yticklabels'), color='white')
         
         ax.set_xlabel('Position along cell (µm)', fontsize=10, color='white')
-        ax.set_ylabel('Distance from axis (µm)', fontsize=10, color='white')
-        ax.set_title(f'{channel_name} Channel Intensity', fontsize=12, color='white')
+        ax.set_ylabel('Mean Distance from axis (µm)', fontsize=10, color='white')
+        ax.set_title(f' Mean {channel_name} Channel Intensity', fontsize=12, color='white')
         
         ax.axhline(0, color='white', linestyle='--', alpha=0.5)
         
@@ -282,7 +352,15 @@ def show_cell_details(image, masks, cell_num, pixel_size_um, time_interval=40):
     }
 
 def save_growth_rates(masks, pixel_size_um, output_path, time_interval=40):
-    """Save growth rates of all cells to a text file"""
+    """
+    Save growth rates of all cells to a text file.
+    
+    Args:
+        masks (np.ndarray): Segmentation masks
+        pixel_size_um (float): Pixel size in micrometers
+        output_path (Path): Path for output text file
+        time_interval (float): Time interval for growth rate calculation
+    """
     regions = regionprops(masks)
     with open(output_path, 'w') as f:
         f.write("Cell_ID\tGrowth_Rate(µm/min)\tLength(µm)\tWidth(µm)\n")
@@ -300,7 +378,14 @@ def save_growth_rates(masks, pixel_size_um, output_path, time_interval=40):
 
 
 def analyze_image_pair_interactive(mask_path, image_path, pixel_size_um):
-    """Interactive analysis function with cell selection"""
+    """
+    Interactive analysis function with cell selection and detailed visualization.
+    
+    Args:
+        mask_path (Path): Path to segmentation masks
+        image_path (Path): Path to corresponding image
+        pixel_size_um (float): Pixel size in micrometers
+    """
     masks, image = load_data(mask_path, image_path)
     regions = regionprops(masks)
     output_path = mask_path.parent / f"{mask_path.stem.replace('_masks', '_growth_rates.txt')}"
@@ -363,202 +448,207 @@ def analyze_image_pair_interactive(mask_path, image_path, pixel_size_um):
         fig.canvas.draw_idle()
 
     fig.canvas.mpl_connect('button_press_event', on_click)
-    
+
     plt.title(f"Cell analyzer\n{image_path.stem} | Pixel size: {pixel_size_um} µm")
     plt.tight_layout()
     plt.show()
 
-    plot_all_channels_intensity_profiles(
-    masks, 
-    image,
-    pixel_size_um
-)
+    print("Generating multi-channel intensity analysis...")
+    all_cell_ids = list(range(1, masks.max() + 1))
+    plot_all_cells_all_channels_normalized_spatial(masks, image, pixel_size_um, all_cell_ids, mask_path=mask_path)
   
 
-def plot_all_channels_intensity_profiles(masks, image, pixel_size_um):
-    """Plot intensity profiles for all channels colormaps"""
-   
-    regions = regionprops(masks)
-    if len(regions) == 0:
-        print("No cells found")
-        return
+def plot_all_cells_all_channels_normalized_spatial(masks, image, pixel_size_um, cell_ids, mask_path=None):
+    """
+    Plot MEAN intensity across ALL cells for ALL channels with Gaussian smoothing.
     
-    valid_regions = [r for r in regions if r.major_axis_length > 0]
-    if len(valid_regions) == 0:
-        print("No valid cells found")
-        return
-    
-    sorted_regions = sorted(valid_regions, key=lambda r: r.major_axis_length)
-    num_valid = len(sorted_regions)
-    
-    purple_yellow = LinearSegmentedColormap.from_list(
-        'compact_purple_yellow', 
-        [
-            '#2E0854', 
-            '#8A2BE2',  
-            '#FFD700'   
-        ],
-        N=128  
-    )
-    
-    channels = [
-        {"idx": 1, "name": "Green"},
-        {"idx": 0, "name": "Red"},
-        {"idx": 2, "name": "Blue"}]
-    
-    fig = plt.figure(figsize=(16, 18), facecolor='black')
-    main_gs = GridSpec(3, 1, height_ratios=[1, 1, 1], hspace=0.35)
-    
-    axes = []
-    cbar_axes = []
-    
-    for i, channel in enumerate(channels):
-        channel_gs = GridSpecFromSubplotSpec(1, 2, 
-                                    subplot_spec=main_gs[i],
-                                    width_ratios=[0.97, 0.03],
-                                    wspace=0.02) 
+    Args:
+        masks (np.ndarray): Segmentation masks
+        image (np.ndarray): Multi-channel image
+        pixel_size_um (float): Pixel size for scaling
+        cell_ids (list): List of cell IDs to include
+        mask_path (Path): Path to mask file for naming output
         
-        ax = fig.add_subplot(channel_gs[0])  
+    Returns:
+        dict: Analysis results for each channel
+    """
+    fig = plt.figure(figsize=(12, 15), facecolor='black', constrained_layout=True)
+    
+    
+    gs = GridSpec(3, 1, figure=fig, height_ratios=[1, 1, 1])  
+    channel_indices = [1, 0, 2]
+    channel_names = ['Green', 'Red', 'Blue']
+    channel_colors = ['#00FF00', '#FF0000', '#0000FF']  # Green, Red, Blue
+    
+    channel_results = {}
+    total_valid_cells = 0
+    
+    # Process each channel
+    for channel_idx, channel_name, color in zip(channel_indices, channel_names, channel_colors):
+        ax = fig.add_subplot(gs[channel_indices.index(channel_idx)])
         ax.set_facecolor('black')
-        axes.append(ax)
         
-        cax = fig.add_subplot(channel_gs[1]) 
-        cbar_axes.append(cax)
-    
-    max_length_um = max(r.major_axis_length * pixel_size_um for r in sorted_regions)
-    
-    for ax, cax, channel in zip(axes, cbar_axes, channels):
         if image.ndim == 2:
-            channel_data = image
+            channel_data = image  
         else:
-            channel_data = image[:, :, channel["idx"]]
+            channel_data = image[:, :, channel_idx]
         
-        all_segments = []
-        all_colors = []
+        all_intensity_arrays = []
         
-        channel_min_intensity = float('inf')
-        channel_max_intensity = 0
+        valid_cells = 0
         
-        #  intensity 
-        for region in sorted_regions:
-            label = region.label
-            cell_mask = (masks == label)
-            y_points, x_points = np.where(cell_mask)
+        for i, cell_id in enumerate(cell_ids):
             
-            for y, x in zip(y_points, x_points):
-                intensity = channel_data[y, x]
-                if intensity > channel_max_intensity:
-                    channel_max_intensity = intensity
-                if intensity < channel_min_intensity:
-                    channel_min_intensity = intensity
-        
-        if channel_min_intensity == float('inf'):
-            channel_min_intensity = 0
-        if channel_max_intensity == 0:
-            channel_max_intensity = 1
-            
-        if np.any(channel_data):
-            vmin = np.percentile(channel_data, 2)
-            vmax = np.percentile(channel_data, 98)
-        else:
-            vmin, vmax = 0, 1
-        norm = plt.Normalize(vmin, vmax)
-            
-        for i, region in enumerate(sorted_regions):
-            label = region.label
-            L = region.major_axis_length
-            length_um = L * pixel_size_um
-            
-            cell_mask = (masks == label)
-            y_points, x_points = np.where(cell_mask)
-            
-            # orientation
-            cy, cx = region.centroid
-            orientation = region.orientation
-            dx = np.cos(orientation) * 0.5 * L
-            dy = np.sin(orientation) * 0.5 * L
-            
-            # Direction 
-            direction = np.array([-dx, dy])
-            direction_norm = direction / np.linalg.norm(direction)
-            
-            num_bins = 50
-            bin_means = np.zeros(num_bins)
-            bin_counts = np.zeros(num_bins)
-            positions = np.linspace(-length_um/2, length_um/2, num_bins)
-            
-            for y, x in zip(y_points, x_points):
-                vec = np.array([x - cx, y - cy])
-                pos = np.dot(vec, direction_norm) * pixel_size_um
+            if cell_id not in np.unique(masks):
+                continue
                 
-                bin_idx = int(np.clip((pos + length_um/2) / length_um * num_bins, 0, num_bins-1))
+            valid_cells += 1
+            
+            cell_mask = (masks == cell_id).astype(np.uint8)
+            region = regionprops(cell_mask)[0]
+            
+            centroid_y, centroid_x = region.centroid
+            major_length = region.major_axis_length
+            minor_length = region.minor_axis_length
+            orientation = region.orientation + np.pi/2
+            
+            major_x1 = centroid_x + (major_length/2) * np.cos(orientation)
+            major_y1 = centroid_y - (major_length/2) * np.sin(orientation)
+            major_x2 = centroid_x - (major_length/2) * np.cos(orientation)
+            major_y2 = centroid_y + (major_length/2) * np.sin(orientation)
+            
+            A = np.array([major_x1, major_y1])
+            B = np.array([major_x2, major_y2])
+            L = np.linalg.norm(B - A)
+            direction = (B - A) / L if L > 0 else np.array([1, 0])
+            perp = np.array([-direction[1], direction[0]])
+            
+            
+            cell_points = np.where(cell_mask)
+            
+            num_x_bins = 100
+            num_y_bins = 50
+            
+            spatial_grid_norm = np.zeros((num_y_bins, num_x_bins))
+            count_grid_norm = np.zeros((num_y_bins, num_x_bins))
+            
+            for y, x in zip(*cell_points):
+                P = np.array([x, y])
+                vec = P - A
+                
+                x_pos_normalized = np.dot(vec, direction) / L if L > 0 else 0
+                y_pos_normalized = np.dot(vec, perp) / minor_length if minor_length > 0 else 0
+                
+                x_idx_norm = int(np.clip(x_pos_normalized * num_x_bins, 0, num_x_bins-1))
+                y_idx_norm = int(np.clip((y_pos_normalized + 0.5) * num_y_bins, 0, num_y_bins-1))
+                
                 intensity = channel_data[y, x]
                 
-                bin_means[bin_idx] += intensity
-                bin_counts[bin_idx] += 1
+                spatial_grid_norm[y_idx_norm, x_idx_norm] += intensity
+                count_grid_norm[y_idx_norm, x_idx_norm] += 1
             
-            # mean 
-            valid = bin_counts > 0
-            bin_means[valid] /= bin_counts[valid]
+            with np.errstate(divide='ignore', invalid='ignore'):
+                avg_intensity_norm = np.divide(spatial_grid_norm, count_grid_norm)
+                avg_intensity_norm[count_grid_norm == 0] = 0
             
+            all_intensity_arrays.append(avg_intensity_norm)
+        
+        if valid_cells == 0:
+            print(f"No valid cells found for {channel_name} channel!")
+            continue
             
-            for j in range(num_bins - 1):
-                if valid[j] and valid[j+1]:
-                    y_start = positions[j]
-                    y_end = positions[j+1]
-                    segment = [(i+1, y_start), (i+1, y_end)]
-                    all_segments.append(segment)
-                    
-                    avg_intensity = (bin_means[j] + bin_means[j+1]) / 2
-                    all_colors.append(avg_intensity)
+        total_valid_cells = valid_cells 
         
-        lc = LineCollection(
-            all_segments,
-            array=np.array(all_colors),
-            cmap=purple_yellow,
-            norm=norm,
-            linewidth=1.5, 
-            alpha=0.9
-        )
-        ax.add_collection(lc)
+        all_intensities_stack = np.stack(all_intensity_arrays)
+        mean_intensity = np.mean(all_intensities_stack, axis=0)
+   
+        sigma = 0.7
+        smoothed_intensity = gaussian_filter(mean_intensity, sigma=sigma)
         
-        ax.set_xlim(0, num_valid + 1)
-        ax.set_ylim(-max_length_um * 0.55, max_length_um * 0.55)
-        ax.set_ylabel('Position (µm)', fontsize=10, color='white')  
-        ax.set_title(f'{channel["name"]} Channel', fontsize=12, color='white')  
+        rgb_color = tuple(int(color[i:i+2], 16)/255 for i in (1, 3, 5))
         
-        ax.axhline(0, color='white', linestyle='--', alpha=0.7, linewidth=0.8)
-        
-        ax.grid(True, linestyle=':', alpha=0.2, color='white')
-        ax.tick_params(colors='white', labelsize=8)  
-        
-        if ax != axes[-1]:
-            ax.set_xticklabels([])
+        if channel_name == 'Blue':
+            colors = [
+                (0, 0, 0),          
+                (0, 0, 0),          
+                rgb_color,            
+                rgb_color             
+            ]
         else:
-            ax.set_xlabel('Cell Index', fontsize=10, color='white')
-    
-        cbar = plt.colorbar(lc, cax=cax)
-        cbar.ax.tick_params(labelsize=6)
-        cbar.ax.yaxis.set_tick_params(color='white', size=3) 
-        plt.setp(cbar.ax.get_yticklabels(), color='white', fontsize=6)
+            colors = [
+                (0, 0, 0),           
+                (0, 0, 0),           
+                (0, 0, 0),          
+                rgb_color,            
+                rgb_color           
+            ]
+            
+        
+        n_bins = 256
+        cmap_name = f'{channel_name.lower()}_only'
+        custom_cmap = LinearSegmentedColormap.from_list(cmap_name, colors, N=n_bins)
+        
+        # Plot the SMOOTHED mean intensity 
+        im = ax.imshow(smoothed_intensity, cmap=custom_cmap, aspect='auto',
+                      extent=[0, 1, -0.5, 0.5], origin='lower')
+        
+        ax.set_xlabel('Normalized Position (0 to 1)', fontsize=11, color='white')
+        ax.set_ylabel('Normalized Distance (-0.5 to 0.5)', fontsize=11, color='white')
+        ax.axhline(0, color='white', linestyle='--', alpha=0.5, linewidth=1.2)
+        ax.grid(True, linestyle=':', alpha=0.3, color='white', linewidth=0.8)
+        ax.tick_params(axis='x', colors='white', labelsize=10)
+        ax.tick_params(axis='y', colors='white', labelsize=10)
+
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("right", size="4%", pad=0.12)
+        cbar = plt.colorbar(im, cax=cax)
+        cbar.set_label('Intensity', color='white', fontsize=10)
+        cbar.ax.yaxis.set_tick_params(color='white', labelsize=9)
+        cbar.ax.yaxis.label.set_color('white')
+        plt.setp(plt.getp(cbar.ax.axes, 'yticklabels'), color='white', fontsize=9)
         cax.set_facecolor('black')
+        
+        channel_results[channel_name] = {
+            'total_cells_processed': valid_cells,
+            'mean_intensity': mean_intensity,
+            'smoothed_intensity': smoothed_intensity,
+            'gaussian_sigma': sigma,
+        }
     
-    plt.subplots_adjust(hspace=0.15)  
+    fig.suptitle(f'Multi-Channel Intensity Analysis - {total_valid_cells} Cells (Gaussian σ=0.7)\n', 
+                fontsize=16, color='white', y=0.98)
+    
+    if mask_path is not None:
+        save_dir = Path(r"C:\Users\zindi\PycharmProjects\P2\Evaluations\SAM")
+        mask_filename = Path(mask_path).stem  # Gets 'WT_NADA_RADA_HADA_NHS_40min_ROI1_SIM_masks'
+        base_filename = mask_filename.replace('_masks', '')  
+        save_filename = save_dir / f"{base_filename}_intensities.png"
+        
+        plt.savefig(save_filename, dpi=300, bbox_inches='tight', 
+                   facecolor='black', edgecolor='none')
+        print(f"Saved intensity plot to: {save_filename}")
+    
     plt.show()
+    
+    return channel_results
 
 
 def main():
+    """
+    Main function with argument parsing and folder setup.
+    Supports both interactive and pipeline modes.
+    """
     parser = argparse.ArgumentParser(description='Interactive cell analysis')
     parser.add_argument('--pipeline', action='store_true',
                         help='Run in pipeline mode (processes only first image)')
     args = parser.parse_args()
 
-    sam_folder = Path(r"C:\Users\zindi\PycharmProjects\P2\Evaluations\SAM")
-    brightness_folder = Path(r"C:\Users\zindi\PycharmProjects\P2\test_brightness")
-    metadata_folder = Path(r"C:\Users\zindi\PycharmProjects\P2\test_data")
-
+    root_dir = get_project_root()
+    sam_folder = Path(root_dir) / "Evaluations" / "SAM"
+    brightness_folder = Path(root_dir) / "test_brightness"
+    metadata_folder = Path(root_dir) / "test_data"
     file_pairs = find_matching_files(sam_folder, brightness_folder)
-
+    
     if not file_pairs:
         print("No matching file pairs found!")
         return

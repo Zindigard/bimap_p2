@@ -8,9 +8,50 @@ import tifffile
 from datetime import datetime
 import shutil
 
+def get_project_root():
+    """
+    Get the root directory where scripts are located.
+    
+    Returns:
+        str: Absolute path to the directory containing this script
+    """
+    return os.path.dirname(os.path.abspath(__file__))
+
+def setup_folders():
+    """
+    Create  folder structure for the pipeline .
+    
+    Returns:
+        dict: Dictionary with paths to all required folders
+    """
+    root_dir = get_project_root()
+    
+    folders = {
+        'raw': os.path.join(root_dir, "unpacked images", "Raw"),
+        'output': os.path.join(root_dir, "test_data"),
+        'brightness': os.path.join(root_dir, "test_brightness"),
+        'true': os.path.join(root_dir, "unpacked images", "True")
+    }
+    
+    for folder in folders.values():
+        os.makedirs(folder, exist_ok=True)
+        print(f"Ensured folder exists: {folder}")
+    
+    return folders
 
 def parse_czi_metadata(metadata_xml: str, filename: str) -> dict:
-    """Extract detailed metadata from CZI XML including laser and exposure time info."""
+    """
+    Extract comprehensive metadata from CZI XML format.
+    
+    Args:
+        metadata_xml (str): XML metadata string from CZI file
+        filename (str): Name of the CZI file
+        
+    Returns:
+        dict: Dictionary containing microscope specs, acquisition parameters, 
+              pixel dimensions, and detailed channel information
+    """
+     
     root = ET.fromstring(metadata_xml)
     metadata = {
         'filename': filename,
@@ -97,6 +138,15 @@ def parse_czi_metadata(metadata_xml: str, filename: str) -> dict:
 
 
 def display_czi_images(input_path: str):
+    """
+    Visualize CZI images with their metadata in a multi-panel figure.
+    
+    Args:
+        input_path (str): Path to CZI file or directory containing CZI files
+        
+    Displays:
+        Composite RGB image and individual channel images with metadata
+    """
     if os.path.isdir(input_path):
         czi_files = [f for f in os.listdir(input_path) if f.lower().endswith('.czi')]
         if not czi_files:
@@ -185,7 +235,13 @@ def display_czi_images(input_path: str):
 
 
 def save_metadata_to_file(metadata_list: list, output_folder: str):
-    """Save all metadata to a single text file with detailed information including laser and exposure settings."""
+    """
+    Save all metadata to a single text file with detailed information.
+    
+    Args:
+        metadata_list (list): List of metadata dictionaries
+        output_folder (str): Directory where metadata file will be saved
+    """
     output_path = os.path.join(output_folder, "metadata_summary.txt")
     with open(output_path, 'w') as f:
         f.write("CZI Image Metadata Summary\n")
@@ -235,7 +291,17 @@ def save_metadata_to_file(metadata_list: list, output_folder: str):
 
 
 def convert_czi_to_tiff(czi_path: str, output_folder: str, metadata: dict):
-    """Convert CZI file to TIFF and save with metadata."""
+    """
+    Convert CZI format to TIFF while preserving image data and metadata.
+    
+    Args:
+        czi_path (str): Path to input CZI file
+        output_folder (str): Directory for output TIFF file
+        metadata (dict): Extracted metadata to embed in TIFF
+        
+    Returns:
+        str: Path to the created TIFF file
+    """
     with CziFile(czi_path) as czi:
         image = czi.asarray()
         image_squeezed = np.squeeze(image)
@@ -256,7 +322,12 @@ def convert_czi_to_tiff(czi_path: str, output_folder: str, metadata: dict):
 
 
 def plot_tiff_image(tiff_path: str):
-    """Display TIFF image to verify conversion."""
+    """
+    Display TIFF images with their metadata.
+    
+    Args:
+        tiff_path (str): Path to TIFF file to display
+    """
     with tifffile.TiffFile(tiff_path) as tif:
         image = tif.asarray()
         metadata = tif.pages[0].tags
@@ -288,7 +359,16 @@ def plot_tiff_image(tiff_path: str):
 
 
 def find_matching_true_folder(czi_filename: str, true_root_folder: str) -> str:
-    """Find matching folder in the True directory based on filename patterns."""
+    """
+    Find matching folder in the True directory based on filename patterns.
+    
+    Args:
+        czi_filename (str): Name of CZI file
+        true_root_folder (str): Root directory containing True folders
+        
+    Returns:
+        str: Path to matching folder or None if not found
+    """
     base_pattern = czi_filename.split('.')[0]  #  extension
     base_pattern = '_'.join(base_pattern.split('_')[:-1])  #
 
@@ -300,7 +380,18 @@ def find_matching_true_folder(czi_filename: str, true_root_folder: str) -> str:
 
 
 def process_czi_file(czi_path: str, output_folder: str, metadata_list: list, true_root_folder: str = None):
-    """Process a single CZI file automatically without user confirmation."""
+    """
+    Process a single CZI file automatically without user confirmation.
+    
+    Args:
+        czi_path (str): Path to CZI file
+        output_folder (str): Directory for output files
+        metadata_list (list): List to append metadata to
+        true_root_folder (str, optional): Directory for True data copies
+        
+    Returns:
+        bool: True if processing successful
+    """
     base_name = os.path.basename(czi_path)
     print(f"Processing {base_name}...")
 
@@ -325,7 +416,14 @@ def process_czi_file(czi_path: str, output_folder: str, metadata_list: list, tru
 
 
 def process_all_czi_files(raw_folder: str, output_folder: str, true_root_folder: str = None):
-    """Process all CZI files in the folder automatically."""
+    """
+    Process all CZI files in the folder automatically.
+    
+    Args:
+        raw_folder (str): Directory containing raw CZI files
+        output_folder (str): Directory for processed outputs
+        true_root_folder (str, optional): Directory for True data copies
+    """
     os.makedirs(output_folder, exist_ok=True)
 
     metadata_list = []
@@ -414,7 +512,14 @@ def process_and_save_brightness_tiff(input_path: str, output_path: str, brightne
 
 def process_all_tiff_brightness(input_folder: str, output_folder: str, brightness_factor: float = 1.2):
     
-    """Process all TIFF files in input folder, enhance brightness, and save to output folder."""
+    """
+    Process all TIFF files in input folder, enhance brightness, and save to output folder.
+    
+    Args:
+        input_folder (str): Directory containing input TIFF files
+        output_folder (str): Directory for brightness-enhanced outputs
+        brightness_factor (float): Brightness enhancement factor for all images
+    """
     os.makedirs(output_folder, exist_ok=True)
 
     tiff_files = [f for f in os.listdir(input_folder) if f.lower().endswith(('.tif', '.tiff'))]
@@ -439,18 +544,11 @@ def process_all_tiff_brightness(input_folder: str, output_folder: str, brightnes
 
 
 if __name__ == "__main__":
-    raw_folder = r"C:\Users\zindi\PycharmProjects\P2\unpacked images\Raw"
-    output_folder = r"C:\Users\zindi\PycharmProjects\P2\test_data"
-    brightness_folder = r"C:\Users\zindi\PycharmProjects\P2\test_brightness"
-    true_root_folder = r"C:\Users\zindi\PycharmProjects\P2\unpacked images\True"
+    folders = setup_folders()
 
-    print(f"Processing {raw_folder}...")
-    # Uncomment to display images before processing
-    # display_czi_images(raw_folder)
+    print(f"Processing {folders['raw']}...")
 
-    process_all_czi_files(raw_folder, output_folder, true_root_folder)
-
-    os.makedirs(brightness_folder, exist_ok=True)
+    process_all_czi_files(folders['raw'], folders['output'], folders['true'])
 
     print("\nEnhancing brightness of TIFF files...")
-    process_all_tiff_brightness(output_folder, brightness_folder, brightness_factor=4.5)
+    process_all_tiff_brightness(folders['output'], folders['brightness'], brightness_factor=4.5)
