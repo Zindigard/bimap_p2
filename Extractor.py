@@ -1,0 +1,554 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import xml.etree.ElementTree as ET
+from czifile import CziFile
+from skimage import exposure
+import os
+import tifffile
+from datetime import datetime
+import shutil
+
+def get_project_root():
+    """
+    Get the root directory where scripts are located.
+    
+    Returns:
+        str: Absolute path to the directory containing this script
+    """
+    return os.path.dirname(os.path.abspath(__file__))
+
+def setup_folders():
+    """
+    Create  folder structure for the pipeline .
+    
+    Returns:
+        dict: Dictionary with paths to all required folders
+    """
+    root_dir = get_project_root()
+    
+    folders = {
+        'raw': os.path.join(root_dir, "unpacked images", "Raw"),
+        'output': os.path.join(root_dir, "test_data"),
+        'brightness': os.path.join(root_dir, "test_brightness"),
+        'true': os.path.join(root_dir, "unpacked images", "True")
+    }
+    
+    for folder in folders.values():
+        os.makedirs(folder, exist_ok=True)
+        print(f"Ensured folder exists: {folder}")
+    
+    return folders
+
+def parse_czi_metadata(metadata_xml: str, filename: str) -> dict:
+    """
+    Extract comprehensive metadata from CZI XML format.
+    
+    Args:
+        metadata_xml (str): XML metadata string from CZI file
+        filename (str): Name of the CZI file
+        
+    Returns:
+        dict: Dictionary containing microscope specs, acquisition parameters, 
+              pixel dimensions, and detailed channel information
+    """
+     
+    root = ET.fromstring(metadata_xml)
+    metadata = {
+        'filename': filename,
+        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    }
+
+    pixel_sizes = {}
+    scaling = root.find(".//Scaling")
+    if scaling is not None:
+        for distance in scaling.findall(".//Distance"):
+            dim = distance.get('Id')
+            value = distance.find('Value').text
+            pixel_sizes[dim] = f"{float(value) * 1e6:.4f} µm"  # Convert to µm
+
+    metadata.update({
+        'pixel_size_x': pixel_sizes.get('X', 'N/A'),
+        'pixel_size_y': pixel_sizes.get('Y', 'N/A'),
+        'pixel_size_z': pixel_sizes.get('Z', 'N/A'),
+        'pixel_size_unit': 'µm'
+    })
+
+    microscope_info = {
+        'microscope_model': root.findtext(".//Microscope/System", default="N/A"),
+        'objective_model': root.findtext(".//Objective/Manufacturer/Model", default="N/A"),
+        'objective_na': root.findtext(".//Objective/LensNA", default="N/A"),
+        'objective_magnification': root.findtext(".//Objective/NominalMagnification", default="N/A"),
+        'objective_immersion': root.findtext(".//Objective/Immersion", default="N/A"),
+        'detector_model': root.findtext(".//Detectors/Detector/Manufacturer/Model", default="N/A"),
+        'illumination_type': root.findtext(".//LightSources/LightSource/Type", default="N/A")
+    }
+    metadata.update(microscope_info)
+
+    acquisition_date = root.findtext(".//AcquisitionDateAndTime", default="N/A")
+    if acquisition_date != "N/A":
+        try:
+            dt = datetime.strptime(acquisition_date, "%Y-%m-%dT%H:%M:%S")
+            acquisition_date = dt.strftime('%Y-%m-%d %H:%M:%S')
+        except ValueError:
+            pass
+    metadata['acquisition_date'] = acquisition_date
+
+    channels = []
+    for channel in root.findall(".//Channel"):
+        try:
+            exposure_time = channel.findtext(".//ExposureTime", default="N/A")
+            if exposure_time != "N/A":
+                exposure_time = float(exposure_time) * 1000  # Convert to ms
+                exposure_time = f"{exposure_time:.2f} ms"
+            
+            laser_info = {}
+            light_source_settings = channel.find(".//LightSourcesSettings/LightSourceSettings")
+            if light_source_settings is not None:
+                laser_ref = light_source_settings.find("LightSourceRef")
+                if laser_ref is not None:
+                    laser_id = laser_ref.get('Id')
+                    laser = root.find(f".//LightSources/LightSource[@Id='{laser_id}']")
+                    if laser is not None:
+                        laser_info = {
+                            'model': laser.findtext(".//Manufacturer/Model", default="N/A"),
+                            'wavelength': laser.findtext(".//Laser/Wavelength", default="N/A"),
+                            'power': laser.findtext("Power", default="N/A"),
+                            'attenuation': light_source_settings.findtext("Attenuation", default="N/A")
+                        }
+            
+            channel_info = {
+                'name': channel.get('Name', 'N/A'),
+                'excitation_wavelength': channel.findtext(".//ExcitationWavelength", default="N/A"),
+                'emission_wavelength': channel.findtext(".//EmissionWavelength", default="N/A"),
+                'exposure_time': exposure_time,
+                'laser_model': laser_info.get('model', 'N/A'),
+                'laser_wavelength': laser_info.get('wavelength', 'N/A'),
+                'laser_power': laser_info.get('power', 'N/A'),
+                'laser_attenuation': laser_info.get('attenuation', 'N/A')
+            }
+            channels.append(channel_info)
+        except Exception as e:
+            print(f"Error parsing channel metadata: {str(e)}")
+            continue
+
+    if channels:
+        metadata['channels'] = channels
+
+    return metadata
+
+
+def display_czi_images(input_path: str):
+    """
+    Visualize CZI images with their metadata in a multi-panel figure.
+    
+    Args:
+        input_path (str): Path to CZI file or directory containing CZI files
+        
+    Displays:
+        Composite RGB image and individual channel images with metadata
+    """
+    if os.path.isdir(input_path):
+        czi_files = [f for f in os.listdir(input_path) if f.lower().endswith('.czi')]
+        if not czi_files:
+            print(f"No CZI files found in directory: {input_path}")
+            return
+    else:
+        czi_files = [os.path.basename(input_path)]
+        input_path = os.path.dirname(input_path) or '.'
+
+    for czi_filename in czi_files:
+        full_path = os.path.join(input_path, czi_filename)
+        try:
+            with CziFile(full_path) as czi:
+                image = czi.asarray()
+                metadata_xml = czi.metadata() if callable(czi.metadata) else czi.metadata
+
+                metadata = parse_czi_metadata(metadata_xml, czi_filename) if isinstance(metadata_xml,
+                                                                                        (str, bytes)) else {}
+
+                print(f"\n{' METADATA ':=^40}")
+                print(f"File: {czi_filename}")
+                for k, v in metadata.items():
+                    print(f"{k.replace('_', ' ').title():>20}: {v}")
+
+                print(f"\n{' IMAGE DATA ':=^40}")
+                print(f"Original shape: {image.shape}")
+                image_squeezed = np.squeeze(image)
+                print(f"Processed shape: {image_squeezed.shape}")
+
+                if image_squeezed.ndim == 3 and image_squeezed.shape[0] == 3:
+                    print("\nProcessing 3-channel image with correct color mapping...")
+
+                    ch0 = exposure.rescale_intensity(image_squeezed[0], out_range=(0, 1))  # Blue
+                    ch1 = exposure.rescale_intensity(image_squeezed[1], out_range=(0, 1))  # Green
+                    ch2 = exposure.rescale_intensity(image_squeezed[2], out_range=(0, 1))  # Red
+
+                    rgb_composite = np.stack([ch2, ch1, ch0], axis=-1)  # RGB order
+                    print('shape', rgb_composite.shape)
+
+                    ch0_blue = np.stack([ch0, np.zeros_like(ch0), np.zeros_like(ch0)], axis=-1)  
+                    ch1_green = np.stack([np.zeros_like(ch1), ch1, np.zeros_like(ch1)], axis=-1)  
+                    ch2_red = np.stack([np.zeros_like(ch2), np.zeros_like(ch2), ch2], axis=-1)  
+
+                    fig, axes = plt.subplots(2, 2, figsize=(10, 10))
+
+                    axes[0, 0].imshow(rgb_composite)
+                    axes[0, 0].set_title("Composite (R=Ch2, G=Ch1, B=Ch0)")
+                    axes[0, 0].axis('off')
+
+                    axes[0, 1].imshow(ch2_red)
+                    axes[0, 1].set_title("Channel 0 (Blue)")
+                    axes[0, 1].axis('off')
+
+                    axes[1, 0].imshow(ch1_green)
+                    axes[1, 0].set_title("Channel 1 (Green)")
+                    axes[1, 0].axis('off')
+
+                    axes[1, 1].imshow(ch0_blue)
+                    axes[1, 1].set_title("Channel 2 (Red)")
+                    axes[1, 1].axis('off')
+
+                    plt.suptitle(f"CZI Image - {czi_filename}", y=1.02)
+                    plt.tight_layout()
+                    plt.show()
+
+                elif image_squeezed.ndim == 3:
+                    fig, axes = plt.subplots(1, image_squeezed.shape[0], figsize=(15, 5))
+                    for c in range(image_squeezed.shape[0]):
+                        channel = image_squeezed[c]
+                        channel_norm = exposure.rescale_intensity(
+                            channel.astype(np.float32),
+                            out_range=(0, 1)
+                        )
+                        axes[c].imshow(channel_norm, cmap='gray')
+                        axes[c].set_title(f"Channel {c}\n{channel.shape}")
+                        axes[c].axis('off')
+
+                    plt.suptitle(f"CZI Image - {czi_filename}", y=1.05)
+                    plt.tight_layout()
+                    plt.show()
+                else:
+                    print(f"\nWarning: Unexpected shape {image_squeezed.shape} - cannot display")
+
+        except Exception as e:
+            print(f"\nError processing file {czi_filename}: {str(e)}")
+
+
+def save_metadata_to_file(metadata_list: list, output_folder: str):
+    """
+    Save all metadata to a single text file with detailed information.
+    
+    Args:
+        metadata_list (list): List of metadata dictionaries
+        output_folder (str): Directory where metadata file will be saved
+    """
+    output_path = os.path.join(output_folder, "metadata_summary.txt")
+    with open(output_path, 'w') as f:
+        f.write("CZI Image Metadata Summary\n")
+        f.write("=" * 40 + "\n\n")
+
+        for metadata in metadata_list:
+            f.write(f"File: {metadata['filename']}\n")
+            f.write(f"Acquisition Date: {metadata.get('acquisition_date', 'N/A')}\n")
+            f.write(f"Processing Timestamp: {metadata['timestamp']}\n\n")
+            
+            
+            f.write("Microscope Information:\n")
+            f.write(f"- Model: {metadata.get('microscope_model', 'N/A')}\n")
+            f.write(f"- Objective: {metadata.get('objective_model', 'N/A')}\n")
+            f.write(f"  Magnification: {metadata.get('objective_magnification', 'N/A')}x\n")
+            f.write(f"  NA: {metadata.get('objective_na', 'N/A')}\n")
+            f.write(f"  Immersion: {metadata.get('objective_immersion', 'N/A')}\n")
+            f.write(f"- Detector: {metadata.get('detector_model', 'N/A')}\n")
+            f.write(f"- Illumination Type: {metadata.get('illumination_type', 'N/A')}\n\n")
+            
+           
+            f.write("Pixel Information:\n")
+            f.write(f"- X: {metadata.get('pixel_size_x', 'N/A')}\n")
+            f.write(f"- Y: {metadata.get('pixel_size_y', 'N/A')}\n")
+            f.write(f"- Z: {metadata.get('pixel_size_z', 'N/A')}\n\n")
+            
+            
+            if 'channels' in metadata:
+                f.write("Channel Details:\n")
+                for i, channel in enumerate(metadata['channels'], 1):
+                    f.write(f"Channel {i}:\n")
+                    f.write(f"- Name: {channel.get('name', 'N/A')}\n")
+                    f.write(f"- Excitation Wavelength: {channel.get('excitation_wavelength', 'N/A')} nm\n")
+                    f.write(f"- Emission Wavelength: {channel.get('emission_wavelength', 'N/A')} nm\n")
+                    f.write(f"- Exposure Time: {channel.get('exposure_time', 'N/A')}\n")
+                    
+                    
+                    if channel.get('laser_model') != 'N/A':
+                        f.write("- Laser Settings:\n")
+                        f.write(f"  Model: {channel.get('laser_model', 'N/A')}\n")
+                        f.write(f"  Wavelength: {channel.get('laser_wavelength', 'N/A')} nm\n")
+                        f.write(f"  Power: {channel.get('laser_power', 'N/A')}\n")
+                        f.write(f"  Attenuation: {channel.get('laser_attenuation', 'N/A')}\n")
+                    f.write("\n")
+            
+            f.write("=" * 40 + "\n\n")
+
+
+def convert_czi_to_tiff(czi_path: str, output_folder: str, metadata: dict):
+    """
+    Convert CZI format to TIFF while preserving image data and metadata.
+    
+    Args:
+        czi_path (str): Path to input CZI file
+        output_folder (str): Directory for output TIFF file
+        metadata (dict): Extracted metadata to embed in TIFF
+        
+    Returns:
+        str: Path to the created TIFF file
+    """
+    with CziFile(czi_path) as czi:
+        image = czi.asarray()
+        image_squeezed = np.squeeze(image)
+
+        if image_squeezed.ndim == 3 and image_squeezed.shape[0] == 3:
+            image_squeezed = image_squeezed[::-1]
+
+        base_name = os.path.splitext(os.path.basename(czi_path))[0]
+        tiff_path = os.path.join(output_folder, f"{base_name}.tif")
+
+        tifffile.imwrite(
+            tiff_path,
+            image_squeezed,
+            metadata=metadata
+        )
+
+    return tiff_path
+
+
+def plot_tiff_image(tiff_path: str):
+    """
+    Display TIFF images with their metadata.
+    
+    Args:
+        tiff_path (str): Path to TIFF file to display
+    """
+    with tifffile.TiffFile(tiff_path) as tif:
+        image = tif.asarray()
+        metadata = tif.pages[0].tags
+
+        print(f"\n{' TIFF METADATA ':=^40}")
+        for tag in metadata.values():
+            print(f"{tag.name:>20}: {tag.value}")
+
+        plt.figure(figsize=(10, 6))
+
+        if image.dtype == np.uint16:
+            image = image.astype(np.float32) / 65535.0
+        elif image.dtype == np.uint8:
+            image = image.astype(np.float32) / 255.0
+
+        if image.ndim == 3 and image.shape[0] == 3:
+            disp_image = np.transpose(image, (1, 2, 0))
+            plt.imshow(disp_image)
+            plt.title(f"TIFF Image (RGB)\n{os.path.basename(tiff_path)}")
+        elif image.ndim == 3:
+            plt.imshow(image[0], cmap='gray')
+            plt.title(f"TIFF Image (Channel 0)\n{os.path.basename(tiff_path)}")
+        else:
+            plt.imshow(image, cmap='gray')
+            plt.title(f"TIFF Image\n{os.path.basename(tiff_path)}")
+
+            plt.axis('off')
+            plt.show()
+
+
+def find_matching_true_folder(czi_filename: str, true_root_folder: str) -> str:
+    """
+    Find matching folder in the True directory based on filename patterns.
+    
+    Args:
+        czi_filename (str): Name of CZI file
+        true_root_folder (str): Root directory containing True folders
+        
+    Returns:
+        str: Path to matching folder or None if not found
+    """
+    base_pattern = czi_filename.split('.')[0]  #  extension
+    base_pattern = '_'.join(base_pattern.split('_')[:-1])  #
+
+    for root, dirs, files in os.walk(true_root_folder):
+        for dir_name in dirs:
+            if base_pattern in dir_name:
+                return os.path.join(root, dir_name)
+    return None
+
+
+def process_czi_file(czi_path: str, output_folder: str, metadata_list: list, true_root_folder: str = None):
+    """
+    Process a single CZI file automatically without user confirmation.
+    
+    Args:
+        czi_path (str): Path to CZI file
+        output_folder (str): Directory for output files
+        metadata_list (list): List to append metadata to
+        true_root_folder (str, optional): Directory for True data copies
+        
+    Returns:
+        bool: True if processing successful
+    """
+    base_name = os.path.basename(czi_path)
+    print(f"Processing {base_name}...")
+
+    with CziFile(czi_path) as czi:
+        metadata_xml = czi.metadata() if callable(czi.metadata) else czi.metadata
+        metadata = parse_czi_metadata(metadata_xml, base_name) if isinstance(metadata_xml, (str, bytes)) else {}
+
+        # Convert and save to train data
+        tiff_path = convert_czi_to_tiff(czi_path, output_folder, metadata)
+        print(f"Saved TIFF: {tiff_path}")
+
+        if true_root_folder:
+            matching_folder = find_matching_true_folder(base_name, true_root_folder)
+            if matching_folder:
+                true_tiff_path = os.path.join(matching_folder, os.path.basename(tiff_path))
+                shutil.copy2(tiff_path, true_tiff_path)
+                print(f"Also saved to True folder: {true_tiff_path}")
+
+        metadata_list.append(metadata)
+
+    return True
+
+
+def process_all_czi_files(raw_folder: str, output_folder: str, true_root_folder: str = None):
+    """
+    Process all CZI files in the folder automatically.
+    
+    Args:
+        raw_folder (str): Directory containing raw CZI files
+        output_folder (str): Directory for processed outputs
+        true_root_folder (str, optional): Directory for True data copies
+    """
+    os.makedirs(output_folder, exist_ok=True)
+
+    metadata_list = []
+    processed_files = []
+
+    # Get all CZI files
+    czi_files = [f for f in os.listdir(raw_folder) if f.lower().endswith('.czi')]
+
+    if not czi_files:
+        print("No CZI files found in the raw folder.")
+        return
+
+    print(f"Found {len(czi_files)} CZI files to process.")
+
+    for czi_file in czi_files:
+        czi_path = os.path.join(raw_folder, czi_file)
+        try:
+            process_czi_file(czi_path, output_folder, metadata_list, true_root_folder)
+            processed_files.append(czi_file)
+        except Exception as e:
+            print(f"Error processing {czi_file}: {str(e)}")
+
+    if metadata_list:
+        save_metadata_to_file(metadata_list, output_folder)
+        print(f"\nMetadata summary saved to {os.path.join(output_folder, 'metadata_summary.txt')}")
+
+    print("\nProcessing Summary:")
+    print(f"- Processed files: {len(processed_files)}")
+
+
+def enhance_brightness(image: np.ndarray, brightness_factor: float = 1.2) -> np.ndarray:
+    """Enhance brightness of an image by scaling pixel values. """
+    original_dtype = image.dtype
+
+    if original_dtype == np.uint16:
+        image = image.astype(np.float32) / 65535.0
+    elif original_dtype == np.uint8:
+        image = image.astype(np.float32) / 255.0
+    else:
+        image = image.astype(np.float32)
+
+    enhanced = np.clip(image * brightness_factor, 0, 1)
+
+    if original_dtype == np.uint16:
+        enhanced = (enhanced * 65535).astype(np.uint16)
+    elif original_dtype == np.uint8:
+        enhanced = (enhanced * 255).astype(np.uint8)
+    else:
+        enhanced = enhanced.astype(original_dtype)
+
+    return enhanced
+
+
+def process_and_save_brightness_tiff(input_path: str, output_path: str, brightness_factor: float = 1.2):
+    """Load a TIFF image, enhance brightness, and save to new location."""
+    with tifffile.TiffFile(input_path) as tif:
+        image = tif.asarray()
+
+        exclude_tags = {
+            'ImageWidth', 'ImageLength', 'BitsPerSample', 'Compression',
+            'PhotometricInterpretation', 'StripOffsets', 'SamplesPerPixel',
+            'RowsPerStrip', 'StripByteCounts', 'XResolution', 'YResolution',
+            'PlanarConfiguration', 'ResolutionUnit', 'TileWidth', 'TileLength',
+            'TileOffsets', 'TileByteCounts'
+        }
+
+        metadata = {}
+        for tag in tif.pages[0].tags.values():
+            if tag.name not in exclude_tags:
+                try:
+                    if isinstance(tag.value, (str, int, float)):
+                        metadata[tag.name] = tag.value
+                    elif hasattr(tag.value, '__str__'):
+                        metadata[tag.name] = str(tag.value)
+                except:
+                    continue
+
+        enhanced_image = enhance_brightness(image, brightness_factor)
+
+        tifffile.imwrite(
+            output_path,
+            enhanced_image,
+            metadata=metadata
+        )
+
+
+def process_all_tiff_brightness(input_folder: str, output_folder: str, brightness_factor: float = 1.2):
+    
+    """
+    Process all TIFF files in input folder, enhance brightness, and save to output folder.
+    
+    Args:
+        input_folder (str): Directory containing input TIFF files
+        output_folder (str): Directory for brightness-enhanced outputs
+        brightness_factor (float): Brightness enhancement factor for all images
+    """
+    os.makedirs(output_folder, exist_ok=True)
+
+    tiff_files = [f for f in os.listdir(input_folder) if f.lower().endswith(('.tif', '.tiff'))]
+
+    if not tiff_files:
+        print(f"No TIFF files found in {input_folder}")
+        return
+
+    print(f"Found {len(tiff_files)} TIFF files to process for brightness enhancement.")
+
+    for tiff_file in tiff_files:
+        input_path = os.path.join(input_folder, tiff_file)
+        output_path = os.path.join(output_folder, tiff_file)
+
+        try:
+            process_and_save_brightness_tiff(input_path, output_path, brightness_factor)
+            print(f"Brightness-enhanced and saved: {tiff_file}")
+        except Exception as e:
+            print(f"Error processing {tiff_file}: {str(e)}")
+
+    print(f"\nFinished brightness enhancement. Images saved to {output_folder}")
+
+
+if __name__ == "__main__":
+    folders = setup_folders()
+
+    print(f"Processing {folders['raw']}...")
+
+    process_all_czi_files(folders['raw'], folders['output'], folders['true'])
+
+    print("\nEnhancing brightness of TIFF files...")
+    process_all_tiff_brightness(folders['output'], folders['brightness'], brightness_factor=4.5)
